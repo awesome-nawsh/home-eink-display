@@ -13,6 +13,9 @@ import logging
 from datetime import datetime
 from dotenv import load_dotenv
 
+from scheduler import SCREEN_NAMES  # FORCE_SCREEN validation below; scheduler.py has
+                                     # no imports of its own, so this can't create a cycle.
+
 # Load environment variables first
 load_dotenv()
 
@@ -145,7 +148,7 @@ WAKE_INTERVAL = int(os.getenv('WAKE_INTERVAL', '30'))
 SLEEP_INTERVAL = int(os.getenv('SLEEP_INTERVAL', '300'))
 DEBUG_SKIP_TIME_CHECK = os.getenv('DEBUG_SKIP_TIME_CHECK', 'false').lower() == 'true'
 
-# Three-screen scheduler (schedule_config.json) and day-type resolution
+# Four-screen scheduler (schedule_config.json) and day-type resolution
 HOME_ASSISTANT_SCHOOL_DAY_ENTITY = os.getenv('HOME_ASSISTANT_SCHOOL_DAY_ENTITY', 'binary_sensor.school_day')
 HOME_ASSISTANT_WORKDAY_ENTITY = os.getenv('HOME_ASSISTANT_WORKDAY_ENTITY', 'binary_sensor.workday_sensor')
 DAY_TYPE_FALLBACK = os.getenv('DAY_TYPE_FALLBACK', 'work_day')
@@ -153,6 +156,21 @@ SCHEDULE_CONFIG_PATH = os.getenv(
     'SCHEDULE_CONFIG_PATH',
     os.path.join(os.path.dirname(os.path.realpath(__file__)), 'schedule_config.json')
 )
+
+# Testing override: force a specific screen regardless of schedule/day-type
+# (one of scheduler.SCREEN_NAMES, or unset/empty for normal resolution).
+# Intended for verifying a screen renders correctly on real hardware without
+# waiting for its schedule window or day-type to naturally occur — not meant
+# to be left set in production.
+_force_screen_raw = os.getenv('FORCE_SCREEN', '').strip()
+if _force_screen_raw and _force_screen_raw not in SCREEN_NAMES:
+    logging.warning(
+        f"FORCE_SCREEN={_force_screen_raw!r} is not a valid screen name "
+        f"({', '.join(SCREEN_NAMES)}) - ignoring, using normal schedule resolution"
+    )
+    FORCE_SCREEN = None
+else:
+    FORCE_SCREEN = _force_screen_raw or None
 
 # Boot-screen connectivity checklist
 BOOT_CHECK_TIMEOUT = float(os.getenv('BOOT_CHECK_TIMEOUT', '3'))

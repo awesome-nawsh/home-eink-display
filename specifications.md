@@ -22,6 +22,7 @@ A Raspberry Pi Zero W drives a Waveshare 7.5" black/white/red e-ink display moun
 | `daytime_screen` | Shown when `sleep_screen` isn't active and `bus_train_screen` isn't eligible/scheduled; beats `ha_screen` on overlap and is the safe fallback when no window matches at all. Currently a placeholder ("Day time screen" centered) — real content is planned (see `todo.md`) | schedule entry in `schedule_config.json` |
 | Day-type resolution | Once per calendar day, resolves `school_day`/`work_day`/`off_day` from two Home Assistant binary sensors; gates whether `bus_train_screen` is eligible to show (`school_day` only — `work_day`/`off_day` currently fall back to `daytime_screen`, not yet distinguished from each other) | `HOME_ASSISTANT_SCHOOL_DAY_ENTITY`, `HOME_ASSISTANT_WORKDAY_ENTITY`, `DAY_TYPE_FALLBACK` |
 | Boot connectivity checklist | At startup, checks network/internet/LTA API/Home Assistant reachability and displays all four results in one render pass before the loop starts | `BOOT_CHECK_TIMEOUT`, `INTERNET_CHECK_URL` |
+| Screen override (testing) | Forces one of the four screens regardless of schedule/day-type, for verifying a screen renders correctly on real hardware without waiting for its window/day-type to occur naturally. Not meant to be left set in production | `FORCE_SCREEN` |
 | MQTT remote refresh | Home Assistant (or anything else) can publish to a topic to force an immediate manual refresh, including waking the display early | `MQTT_ENABLED`, `MQTT_TOPIC_REFRESH` |
 | MQTT status publishing | Publishes lifecycle status (`online`/`sleeping`/`awake`/`refreshing`/`idle`/`offline`) to a retained topic for HA to consume | `MQTT_TOPIC_STATUS` |
 | Web config panel | Optional Flask app (`app/web_config.py`, not run by the main systemd service) to edit `.env` from a browser without SSH | `WEB_CONFIG_*` |
@@ -72,6 +73,7 @@ Full list of environment variables — see `.env.example` as the source of truth
 | Three-screen scheduler | `SCHEDULE_CONFIG_PATH` (see `schedule_config.json.example`) |
 | Day-type resolution | `HOME_ASSISTANT_SCHOOL_DAY_ENTITY`, `HOME_ASSISTANT_WORKDAY_ENTITY`, `DAY_TYPE_FALLBACK` |
 | Boot connectivity checklist | `BOOT_CHECK_TIMEOUT`, `INTERNET_CHECK_URL` |
+| Screen override (testing) | `FORCE_SCREEN` |
 | Home Assistant — weather | `HOME_ASSISTANT_API_URL`, `HOME_ASSISTANT_TOKEN`, `HOME_ASSISTANT_WEATHER_ENTITY`, `WEATHER_CACHE_DURATION` |
 | Home Assistant — ha_screen | `HOME_ASSISTANT_DASHBOARD_URL` (falls back to legacy `HOME_ASSISTANT_SLEEP_URL`), `SLEEP_SCREEN_DASHBOARD`, `SLEEP_SCREEN_EINK_MODE`, `SLEEP_SCREEN_ZOOM`, `SLEEP_SCREEN_FORMAT`, `SLEEP_SCREEN_WAIT`, `SLEEP_SCREEN_THEME` |
 | MQTT | `MQTT_ENABLED`, `MQTT_BROKER`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_TOPIC_REFRESH`, `MQTT_TOPIC_STATUS` |

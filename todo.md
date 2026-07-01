@@ -42,6 +42,8 @@ Code plan file) for the full design rationale behind each phase.
 - [x] `sleep_screen`/`ha_screen` active: skip `fetch_data_parallel()` entirely (no LTA/weather polling),
       keep MQTT connected + subscribed to refresh topic only, manual refresh still forces redraw
 - [x] `bus_train_screen` only eligible on `day_type == 'school_day'`
+- [x] `FORCE_SCREEN` env var: bypasses schedule/day-type resolution to force one screen for
+      real-hardware testing; invalid values logged and ignored, not meant for production use
 
 ### Testing
 - [x] `tests/test_scheduler.py` — validation, overlap detection, precedence resolution (4-screen model),

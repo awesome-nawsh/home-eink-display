@@ -95,6 +95,9 @@ def main():
         schedule = load_schedule_config(SCHEDULE_CONFIG_PATH, WAKE_HOUR, SLEEP_HOUR)
         logging.info(f"Schedule loaded: {schedule['screens']}")
 
+        if FORCE_SCREEN:
+            logging.warning(f"FORCE_SCREEN={FORCE_SCREEN} active - schedule/day-type resolution bypassed for testing")
+
         mqtt_client = MQTTClient()
 
         epd = epd7in5b_V2.EPD()
@@ -159,8 +162,11 @@ def main():
                 time.sleep(WAKE_INTERVAL)
                 continue
 
-            day_type = resolve_todays_day_type(day_type_cache, get_day_type_sensors, DAY_TYPE_FALLBACK)
-            screen_name, schedule_warnings = resolve_active_screen(schedule, day_type, datetime.now())
+            if FORCE_SCREEN:
+                screen_name, schedule_warnings = FORCE_SCREEN, []
+            else:
+                day_type = resolve_todays_day_type(day_type_cache, get_day_type_sensors, DAY_TYPE_FALLBACK)
+                screen_name, schedule_warnings = resolve_active_screen(schedule, day_type, datetime.now())
 
             for warning in schedule_warnings:
                 if warning not in logged_schedule_warnings:
