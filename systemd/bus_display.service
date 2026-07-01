@@ -1,0 +1,28 @@
+# original file and location /etc/systemd/system/bus_display.service
+[Unit]
+Description=E-Ink Bus Display Service
+Wants=pigpiod.service
+Wants=network-online.target
+After=network-online.target
+After=pigpiod.service
+# After=multi-user.target
+
+[Service]
+Type=simple
+User=seanj
+Group=gpio
+ExecStart=/usr/bin/python3 /home/seanj/singapore-bus-timing-edisplay/app/main.py
+WorkingDirectory=/home/seanj/singapore-bus-timing-edisplay/app
+StandardOutput=inherit
+StandardError=inherit
+Environment="PYTHONUNBUFFERED=1"
+Restart=on-failure
+RestartSec=10
+
+# GPIO permissions
+SupplementaryGroups=gpio spi i2c
+
+[Install]
+WantedBy=multi-user.target
+
+

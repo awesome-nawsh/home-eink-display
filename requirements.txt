@@ -1,0 +1,23 @@
+# Core display & image
+Pillow
+
+# HTTP & APIs
+requests
+
+# Environment config
+python-dotenv
+
+# MQTT (Home Assistant integration)
+paho-mqtt
+
+# Web config panel (web_config.py)
+flask
+werkzeug
+
+# System monitoring (optional, gracefully skipped if missing)
+psutil
+
+# NOTE: pigpio is a system package on Raspberry Pi OS.
+# Install it with: sudo apt-get install python3-pigpio
+# It is NOT available on PyPI in a usable form for Pi GPIO.
+# Do not add pigpio here — install it via apt on the Pi.
