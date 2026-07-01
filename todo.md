@@ -148,6 +148,16 @@ See `design.md` for the design rationale behind each phase.
       data through it, add a direct calendar integration (subscribe to a calendar `.ics` URL/feed)
       as an alternative to (or in addition to) any future HA-based calendar display.
 
+## Typography (not yet scheduled to a phase)
+
+- [ ] Font chooser: today's font is hardcoded to Atkinson Hyperlegible Next (`render/common.py`'s
+      `get_font()`/`get_font_bold()`, loaded from `pic/`) — add a way to pick from a set of bundled
+      fonts (via `.env`/the web config panel) instead of editing code to swap fonts.
+- [ ] Curate and bundle a small set of other fonts known to render well on e-ink at this panel's
+      resolution/viewing distance (high x-height, clear digit disambiguation, works well at the
+      screen-door-effect resolution) as options for the font chooser above — e.g. other accessible/
+      legible typefaces beyond Atkinson Hyperlegible Next, licensed for redistribution in `pic/`.
+
 ## Architecture: modularize for easier extension (not yet scheduled to a phase)
 
 The four screens and their config fields are currently hardcoded (main.py's screen dispatch is an
