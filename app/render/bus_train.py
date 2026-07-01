@@ -27,16 +27,14 @@ def draw_timestamp(draw_r, x=None, y=10, manual=False):
         time_text += " ★"
 
     if x is None:
-        bbox = timestamp_font.getbbox(time_text)
-        text_width = bbox[2] - bbox[0]
-        x = SCREEN_WIDTH - text_width - TEXT_RIGHT_MARGIN
+        # anchor="ra" (right, ascender) pins the text's right edge to x and
+        # keeps the same top-aligned vertical placement as the default
+        # anchor — equivalent to the old manual bbox-width right-align math.
+        draw_r.text((SCREEN_WIDTH - TEXT_RIGHT_MARGIN, y), time_text, font=timestamp_font, fill=0, anchor="ra")
+    else:
+        draw_r.text((x, y), time_text, font=timestamp_font, fill=0)
 
-    draw_r.text((x, y), time_text, font=timestamp_font, fill=0)
-
-    bbox = small_font.getbbox(formatted_date)
-    date_width = bbox[2] - bbox[0]
-    date_x = SCREEN_WIDTH - date_width - TEXT_RIGHT_MARGIN
-    draw_r.text((date_x, y + 22), formatted_date, font=small_font, fill=0)
+    draw_r.text((SCREEN_WIDTH - TEXT_RIGHT_MARGIN, y + 22), formatted_date, font=small_font, fill=0, anchor="ra")
 
 def draw_bus_section(draw, draw_r, bus_info, font, y_start, load_font, journey_times=None):
     """Draw the bus arrival section with journey times and destination header."""
@@ -66,11 +64,14 @@ def draw_bus_section(draw, draw_r, bus_info, font, y_start, load_font, journey_t
 
         draw.rectangle((BUS_SECTION_X, box_top, BUS_SECTION_X + BUS_BOX_WIDTH, box_top + box_height), fill=0)
 
-        # Bus number
-        bus_bbox = bus_number_font.getbbox(service_no)
-        bus_text_height = bus_bbox[3] - bus_bbox[1]
-        bus_text_y = box_center_y - (bus_text_height / 2) - 5
-        draw.text((50, bus_text_y), service_no, font=bus_number_font, fill=255)
+        # Bus number — anchor="lm" (left, middle) vertically centers on
+        # box_center_y using the font's ascender/descender metrics rather
+        # than this specific string's ink bbox, replacing the old manual
+        # getbbox()-height centering. Slightly more consistent than before
+        # (no longer shifts a couple px depending on which digits are
+        # present), but is a real few-px change from the old bbox-based
+        # math — worth a visual check next time the panel is verified.
+        draw.text((50, box_center_y - 5), service_no, font=bus_number_font, fill=255, anchor="lm")
 
         # Arrival times - show "Arr" for 0 minutes
         times_display = []
@@ -81,10 +82,7 @@ def draw_bus_section(draw, draw_r, bus_info, font, y_start, load_font, journey_t
                 times_display.append(str(time))
 
         times_text = " | ".join(times_display)
-        times_bbox = font.getbbox(times_text)
-        times_text_height = times_bbox[3] - times_bbox[1]
-        times_text_y = box_center_y - (times_text_height / 2)
-        draw.text((BUS_TIMES_X, times_text_y), times_text, font=font, fill=0)
+        draw.text((BUS_TIMES_X, box_center_y), times_text, font=font, fill=0, anchor="lm")
 
         # Load indicator with icon - UPDATED
         if load_rates:

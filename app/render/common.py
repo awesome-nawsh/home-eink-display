@@ -117,10 +117,15 @@ class DisplayManager:
         self.epd.display(self.epd.getbuffer(self.black_image),
                         self.epd.getbuffer(self.red_image))
 
-def draw_mdi_icon(draw, x, y, icon_char, size=50, color=0):
-    """Draw a Material Design Icon at the specified position."""
+def draw_mdi_icon(draw, x, y, icon_char, size=50, color=0, anchor=None):
+    """Draw a Material Design Icon at the specified position.
+
+    `anchor` is passed straight through to PIL's text anchor system (e.g.
+    "mm" to center the icon on (x, y)) — optional and defaults to PIL's
+    normal top-left placement, so existing call sites are unaffected.
+    """
     icon_font = get_icon_font(size)
-    draw.text((x, y), icon_char, font=icon_font, fill=color)
+    draw.text((x, y), icon_char, font=icon_font, fill=color, anchor=anchor)
 
 def get_weather_icon(condition):
     """Map weather condition to MDI icon."""
