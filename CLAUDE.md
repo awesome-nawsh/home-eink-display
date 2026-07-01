@@ -6,6 +6,8 @@ A Raspberry Pi e-ink display that shows Singapore bus arrival times, MRT disrupt
 **Current version:** v13.0  
 **Status:** Production, running as a systemd service on a Raspberry Pi Zero W
 
+Setting this up from scratch? See [How-to.md](How-to.md) for the full step-by-step guide.
+
 ---
 
 ## Hardware

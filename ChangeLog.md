@@ -16,6 +16,8 @@ Fixes a real auth bypass and closes out the last major file from before this rew
 - New `systemd/web_config.service` — the panel now has its own persistent systemd unit instead of "run it separately."
 - 39 new tests (`test_secrets_vault.py`, `test_web_config_env.py`, `test_web_config_schedule_forms.py`, `test_web_config_auth.py`) — the last of these includes the actual regression test for the fixed auth bug (a forged `logged_in=true` cookie, and a session cookie signed with the wrong secret, both correctly denied).
 - Explicitly deferred: login rate-limiting/lockout (single-admin LAN app, low risk — conscious skip, see `todo.md`).
+- New `tools/migrate_env.py` — migrates an existing `.env` to this phase's format (encrypts plaintext secrets, adds `HOME_ASSISTANT_DASHBOARD_URL`, generates `WEB_CONFIG_SECRET_KEY`/`WEB_CONFIG_PASSWORD_HASH` if missing, creates `schedule_config.json` from the template). Backs up `.env` first; never prints secret values.
+- New [How-to.md](How-to.md) — step-by-step setup guide for running this project from scratch.
 
 ### Phase 2 — Four-screen scheduler, day-type gating, boot connectivity checklist
 
