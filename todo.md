@@ -147,3 +147,22 @@ See `design.md` for the design rationale behind each phase.
 - [ ] Calendar integration: for users without Home Assistant, or who'd rather not route calendar
       data through it, add a direct calendar integration (subscribe to a calendar `.ics` URL/feed)
       as an alternative to (or in addition to) any future HA-based calendar display.
+
+## Architecture: modularize for easier extension (not yet scheduled to a phase)
+
+The four screens and their config fields are currently hardcoded (main.py's screen dispatch is an
+if/elif chain, `scheduler.SCREEN_NAMES` is a fixed 4-tuple, `CONFIG_SCHEMA` is one static dict).
+That's been fine for four screens with known behavior, but the following would need it to become
+more plugin-like/registry-based rather than hardcoded:
+
+- [ ] A screen registry/interface (e.g. each screen module registers itself with a name, a render
+      function, and its own config fields) so adding a new screen — or a new config section — doesn't
+      require touching `main.py`'s dispatch, `scheduler.py`'s `SCREEN_NAMES`, and `CONFIG_SCHEMA` all
+      by hand in three places.
+- [ ] A "rolling"/rotating screen type: cycles through multiple sub-views on a timer within its own
+      schedule window (distinct from today's one-view-per-screen model).
+- [ ] A custom image-slideshow screen: let the user point at a local folder (or a set of URLs) of
+      images to cycle through, instead of (or alongside) the built-in screens.
+- [ ] Support more than one `ha_screen` target: let the user configure a set of HA dashboard
+      URLs to rotate through or pick from, instead of the single `HOME_ASSISTANT_DASHBOARD_URL`
+      today.
