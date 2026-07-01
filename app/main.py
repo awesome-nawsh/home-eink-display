@@ -52,8 +52,18 @@ logging.basicConfig(
 BUS_LOAD_MAP_SIZE = {'SEA': 10, 'SDA': 50, 'LSD': 90}
 BUS_LOAD_MAP_TEXT = {'SEA': 'Seats', 'SDA': 'Standing', 'LSD': 'Limited'}
 
+# Physical panel dimensions — must match EPD_WIDTH/EPD_HEIGHT in
+# lib/waveshare_epd/epd7in5b_V2.py. Every other layout constant below is
+# either a fixed offset from the edges/each other or derived from these
+# two values, so resizing the panel only means changing these two lines
+# (DisplayManager checks the real hardware against these at startup and
+# refuses to run if they've drifted apart).
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 480
+
 # Display layout constants
 COLUMN_WIDTH_RATIO = 0.5
+COLUMN_OFFSET = int(SCREEN_WIDTH * COLUMN_WIDTH_RATIO)  # x boundary between the bus column and the train/weather column
 BUS_BOX_HEIGHT = 60
 BUS_BOX_WIDTH = 160
 BUS_BOX_Y_OFFSET = 70  # y_start for draw_bus_section: 15px below the header divider at y=55
@@ -1041,6 +1051,13 @@ def fetch_data_parallel(force_refresh=False):
 class DisplayManager:
     """Manages image buffers for the e-ink display."""
     def __init__(self, epd):
+        if epd.width != SCREEN_WIDTH or epd.height != SCREEN_HEIGHT:
+            raise ValueError(
+                f"Panel reports {epd.width}x{epd.height} but SCREEN_WIDTH/SCREEN_HEIGHT "
+                f"are set to {SCREEN_WIDTH}x{SCREEN_HEIGHT}. Draw functions use the "
+                f"SCREEN_WIDTH/SCREEN_HEIGHT constants directly, not the panel's reported "
+                f"size, so update those constants (main.py) to match the driver in use."
+            )
         self.epd = epd
         self.black_image = Image.new('1', (epd.width, epd.height), 255)
         self.red_image = Image.new('1', (epd.width, epd.height), 255)
@@ -1061,12 +1078,12 @@ def draw_mdi_icon(draw, x, y, icon_char, size=50, color=0):
     icon_font = get_icon_font(size)
     draw.text((x, y), icon_char, font=icon_font, fill=color)
 
-def draw_timestamp(draw_r, epd_width, x=None, y=10, manual=False):
+def draw_timestamp(draw_r, x=None, y=10, manual=False):
     """Draw the last updated timestamp at the top right of the screen."""
     now = datetime.now()
     formatted_time = now.strftime("%H:%M")
     formatted_date = now.strftime("%d %b %Y")
-    
+
     timestamp_font = get_font(FONT_TIMESTAMP)
     small_font = get_font(FONT_SMALL)
 
@@ -1077,13 +1094,13 @@ def draw_timestamp(draw_r, epd_width, x=None, y=10, manual=False):
     if x is None:
         bbox = timestamp_font.getbbox(time_text)
         text_width = bbox[2] - bbox[0]
-        x = epd_width - text_width - TEXT_RIGHT_MARGIN
+        x = SCREEN_WIDTH - text_width - TEXT_RIGHT_MARGIN
 
     draw_r.text((x, y), time_text, font=timestamp_font, fill=0)
 
     bbox = small_font.getbbox(formatted_date)
     date_width = bbox[2] - bbox[0]
-    date_x = epd_width - date_width - TEXT_RIGHT_MARGIN
+    date_x = SCREEN_WIDTH - date_width - TEXT_RIGHT_MARGIN
     draw_r.text((date_x, y + 22), formatted_date, font=small_font, fill=0)
 
 def draw_bus_section(draw, draw_r, bus_info, font, y_start, load_font, journey_times=None):
@@ -1103,7 +1120,7 @@ def draw_bus_section(draw, draw_r, bus_info, font, y_start, load_font, journey_t
         header_y = y
         draw_mdi_icon(draw_r, JOURNEY_ICON_X, header_y, MDI.MAP_MARKER_DISTANCE, size=20, color=0)
         draw.text((50, header_y + 2), f"Journeys to: {dest_display}", font=dest_header_font, fill=0)
-        draw.line((BUS_SECTION_X, header_y + 26, 400, header_y + 26), fill=0, width=1)
+        draw.line((BUS_SECTION_X, header_y + 26, COLUMN_OFFSET, header_y + 26), fill=0, width=1)
         y += JOURNEY_HEADER_GAP
 
     for service_no, arrival_times, load_rates in bus_info:
@@ -1177,16 +1194,16 @@ def draw_bus_section(draw, draw_r, bus_info, font, y_start, load_font, journey_t
     
     return y
 
-def draw_weather_section_right(draw, draw_r, weather_info, x_start, epd_width, epd_height):
+def draw_weather_section_right(draw, draw_r, weather_info, x_start):
     """Draw the weather section in right column below train status."""
     if not weather_info:
         return
-    
+
     # Position weather in right column - fixed position from bottom
-    weather_y = epd_height - WEATHER_SECTION_HEIGHT
-    
+    weather_y = SCREEN_HEIGHT - WEATHER_SECTION_HEIGHT
+
     # Draw separator line
-    draw_r.line((x_start, weather_y, epd_width - SCREEN_MARGIN, weather_y), fill=0, width=1)
+    draw_r.line((x_start, weather_y, SCREEN_WIDTH - SCREEN_MARGIN, weather_y), fill=0, width=1)
     weather_y += WEATHER_POST_DIVIDER_GAP
 
     # Weather header
@@ -1213,7 +1230,7 @@ def draw_weather_section_right(draw, draw_r, weather_info, x_start, epd_width, e
         draw_mdi_icon(draw_r, x_start, weather_y + 65, MDI.WATER_PERCENT, size=18, color=0)
         draw_r.text((x_start + 23, weather_y + 65), f"{humidity}%", font=get_font(BOTTOM_FONT_SIZE), fill=0)
 
-def draw_train_section(draw, draw_r, train_info, train_x, epd_width, epd_height):
+def draw_train_section(draw, draw_r, train_info, train_x):
     """Draw the train disruption section and return final y position."""
     train_font = get_font(FONT_SECTION)
     train_header_font = get_font_bold(FONT_HEADER)
@@ -1221,7 +1238,7 @@ def draw_train_section(draw, draw_r, train_info, train_x, epd_width, epd_height)
     draw_mdi_icon(draw, train_x - 5, 8, MDI.SUBWAY, size=40, color=0)
 
     draw_r.text((train_x + 45, HEADER_TEXT_Y), "Train Status", font=train_header_font, fill=0)
-    draw_r.line((train_x, HEADER_DIVIDER_Y, epd_width - SCREEN_MARGIN, HEADER_DIVIDER_Y), fill=0, width=1)
+    draw_r.line((train_x, HEADER_DIVIDER_Y, SCREEN_WIDTH - SCREEN_MARGIN, HEADER_DIVIDER_Y), fill=0, width=1)
 
     y_offset = TRAIN_SECTION_Y_OFFSET
 
@@ -1257,13 +1274,13 @@ def draw_train_section(draw, draw_r, train_info, train_x, epd_width, epd_height)
             y_offset += TRAIN_DISRUPTION_GAP
 
             # Stop if getting too long to leave room for weather (which starts
-            # at epd_height - WEATHER_SECTION_HEIGHT in the same column)
-            if y_offset > epd_height - WEATHER_SECTION_HEIGHT:
+            # at SCREEN_HEIGHT - WEATHER_SECTION_HEIGHT in the same column)
+            if y_offset > SCREEN_HEIGHT - WEATHER_SECTION_HEIGHT:
                 break
 
-        if train_info.get('content') and y_offset < epd_height - WEATHER_SECTION_HEIGHT + 20:
+        if train_info.get('content') and y_offset < SCREEN_HEIGHT - WEATHER_SECTION_HEIGHT + 20:
             y_offset += ALERT_SECTION_GAP
-            draw_r.line((train_x, y_offset, epd_width - SCREEN_MARGIN, y_offset), fill=0, width=1)
+            draw_r.line((train_x, y_offset, SCREEN_WIDTH - SCREEN_MARGIN, y_offset), fill=0, width=1)
             y_offset += ALERT_POST_DIVIDER_GAP
 
             draw_mdi_icon(draw_r, train_x, y_offset, MDI.ALERT, size=18, color=0)
@@ -1282,37 +1299,35 @@ def display_combined_view(display_mgr, font, bus_info, train_info, weather_info,
     logging.debug("Displaying combined bus, train, and weather info...")
     
     draw, draw_r = display_mgr.clear_images()
-    epd = display_mgr.epd
-    
-    column_offset = int(epd.width * COLUMN_WIDTH_RATIO)
+
     load_font = get_font(LOAD_FONT_SIZE)
     bus_header_font = get_font_bold(FONT_HEADER)
 
     mqtt_connected = mqtt_client.connected if mqtt_client else False
 
     draw_mdi_icon(draw, HEADER_ICON_X, HEADER_ICON_Y, MDI.BUS_MARKER, size=HEADER_ICON_SIZE, color=0)
-    draw_timestamp(draw_r, epd.width, manual=manual_refresh)
+    draw_timestamp(draw_r, manual=manual_refresh)
 
     if mqtt_connected:
-        draw_mdi_icon(draw_r, epd.width - 70, epd.height - 70, MDI.HOME_AUTOMATION, size=HEADER_ICON_SIZE, color=0)
+        draw_mdi_icon(draw_r, SCREEN_WIDTH - 70, SCREEN_HEIGHT - 70, MDI.HOME_AUTOMATION, size=HEADER_ICON_SIZE, color=0)
 
-    draw_r.line((column_offset, COLUMN_DIVIDER_TOP_Y, column_offset, epd.height - SCREEN_MARGIN),
+    draw_r.line((COLUMN_OFFSET, COLUMN_DIVIDER_TOP_Y, COLUMN_OFFSET, SCREEN_HEIGHT - SCREEN_MARGIN),
                 fill=0, width=DIVIDER_WIDTH)
 
     # ========== LEFT COLUMN: BUS ARRIVALS ONLY ==========
     draw_r.text((80, HEADER_TEXT_Y), HEADER_A, font=bus_header_font, fill=0)
-    draw_r.line((SCREEN_MARGIN, HEADER_DIVIDER_Y, column_offset - SCREEN_MARGIN, HEADER_DIVIDER_Y), fill=0, width=1)
+    draw_r.line((SCREEN_MARGIN, HEADER_DIVIDER_Y, COLUMN_OFFSET - SCREEN_MARGIN, HEADER_DIVIDER_Y), fill=0, width=1)
 
     final_bus_y = draw_bus_section(draw, draw_r, bus_info, font, BUS_BOX_Y_OFFSET, load_font, journey_times)
 
     # ========== RIGHT COLUMN: TRAIN STATUS AND WEATHER ==========
-    train_x = column_offset + TRAIN_COLUMN_INDENT
-    
+    train_x = COLUMN_OFFSET + TRAIN_COLUMN_INDENT
+
     # Draw train status
-    final_train_y = draw_train_section(draw, draw_r, train_info, train_x, epd.width, epd.height)
-    
+    final_train_y = draw_train_section(draw, draw_r, train_info, train_x)
+
     # Draw weather below train status in right column
-    draw_weather_section_right(draw, draw_r, weather_info, train_x, epd.width, epd.height)
+    draw_weather_section_right(draw, draw_r, weather_info, train_x)
     
     system_health.record_display_update(manual=manual_refresh)
     
@@ -1321,16 +1336,15 @@ def display_combined_view(display_mgr, font, bus_info, train_info, weather_info,
 def display_debug_screen(display_mgr, boot_time):
     """Display debug information with all environment variables."""
     draw, draw_r = display_mgr.clear_images()
-    epd = display_mgr.epd
-    
+
     draw_mdi_icon(draw, HEADER_ICON_X, HEADER_ICON_Y, MDI.BUS_MARKER, size=40, color=0)
     draw_r.text((70, 15), "DEBUG MODE", font=get_font_bold(FONT_HEADER), fill=0)
-    draw_r.line((SCREEN_MARGIN, 50, epd.width - SCREEN_MARGIN, 50), fill=0, width=DIVIDER_WIDTH)
+    draw_r.line((SCREEN_MARGIN, 50, SCREEN_WIDTH - SCREEN_MARGIN, 50), fill=0, width=DIVIDER_WIDTH)
 
     debug_font = get_font(11)
     y_pos = 60
     line_spacing = 17
-    column_split = int(epd.width * COLUMN_WIDTH_RATIO)
+    column_split = COLUMN_OFFSET
     
     left_vars = [
         f"Boot: {boot_time}",
@@ -1375,7 +1389,7 @@ def display_debug_screen(display_mgr, boot_time):
             draw.text((column_split + 10, y), var, font=debug_font, fill=0)
         y += line_spacing
     
-    draw_r.text((15, epd.height - 25),
+    draw_r.text((15, SCREEN_HEIGHT - 25),
                "Displaying for 5 seconds...",
                font=get_font(BOTTOM_FONT_SIZE), fill=0)
     
@@ -1498,7 +1512,7 @@ def main():
             draw_mdi_icon(draw, HEADER_ICON_X, HEADER_ICON_Y, MDI.BUS_MARKER, size=HEADER_ICON_SIZE, color=0)
 
             draw.text((85, HEADER_TEXT_Y), "System Starting...", font=boot_font, fill=0)
-            draw_r.text((epd.width // 2 - 100, epd.height // 2),
+            draw_r.text((COLUMN_OFFSET - 100, SCREEN_HEIGHT // 2),
                        f"Booted: {boot_time}", font=get_font(FONT_TIMESTAMP), fill=0)
             
             display_mgr.display()
