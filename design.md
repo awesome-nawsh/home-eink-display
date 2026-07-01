@@ -102,7 +102,19 @@ Collapsing to two constants read directly by every draw function (rather than th
 
 **Day-type resolved once per calendar day, not every loop iteration**: `day_type.DayTypeCache` only re-queries Home Assistant's `binary_sensor.school_day`/`binary_sensor.workday_sensor` when `date.today()` changes from the last resolution, not on every ~30s loop tick. This mirrors the philosophy in §5 (stale-cache-first) but for a different reason: day-type is inherently a once-a-day fact (a day doesn't become "less of a school day" at 10am), so re-querying it every loop iteration would be wasted API calls with no behavioral upside — and worse, if a `binary_sensor.school_day` helper ever flips state mid-morning for any reason, continuously re-resolving it would yank `bus_train_screen` away mid-commute, which is exactly the surprising behavior a display like this must avoid.
 
-## 14. Related documents
+## 14. Web config auth: signed session over a bare cookie, hand-rolled CSRF over a new dependency
+
+**Decision**: `web_config.py`'s login state is a real Flask `session` (an itsdangerous-signed cookie, keyed by `app.secret_key`), not the bare `response.set_cookie('logged_in', 'true', ...)` it used before Phase 3 — which any client could forge by setting that literal cookie value themselves, with zero cryptographic check. CSRF protection is a minimal hand-rolled session-stored token rather than pulling in a library like Flask-WTF.
+
+**Why signed session, not a custom scheme**: Flask ships this for free (itsdangerous is a core dependency, not new), it's the standard, well-understood mechanism, and it directly closes the actual vulnerability — a tampered or forged cookie now fails signature verification and Flask treats it as an empty session, so `login_required` correctly denies access. There was no reason to build anything more elaborate (e.g. a server-side session store) for a single-admin hobby panel.
+
+**Why hand-rolled CSRF, not a library**: the state-changing surface is small (five POST routes), and a session-stored nonce compared with `secrets.compare_digest` is the entire mechanism — maybe 20 lines. Pulling in Flask-WTF for this would add a dependency and its own template/form-object conventions for a project that otherwise renders plain Jinja forms. This is a case where "just enough" beats a general-purpose library.
+
+**Startup guard, not a runtime fallback**: `WEB_CONFIG_SECRET_KEY`/`WEB_CONFIG_PASSWORD_HASH` used to fall back to a hardcoded secret and a hash of `"admin123"` respectively if unset — meaning a forgotten `.env` entry silently ran with a known-insecure default rather than failing loudly. `validate_web_config()` now refuses to start at all in that case (same "fail fast at startup" philosophy as `config.py`'s `validate_configuration()`, §9) — a misconfigured web panel exposed to the LAN is worse than a web panel that simply won't start until configured correctly.
+
+**Secrets-at-rest encryption — stated scope, not oversold**: `secrets_vault.py` encrypts password-type `.env` values (Fernet, via the `cryptography` package) so a `.env` file viewed, shared, or accidentally committed *in isolation* doesn't expose API keys/tokens in plaintext. This is explicitly **not** a defense against someone with full filesystem access to the Pi itself — the decryption key (`app/.encryption_key`) has to live on the same disk for the running app to use it, so a fully compromised device defeats it trivially. The value is narrower and real: it protects against the class of accidents this project has already had close calls with in this rewrite (nearly showing secret values in a chat transcript, a `.env` that could be screen-shared or backed up carelessly) — not against a determined attacker with root on the device.
+
+## 15. Related documents
 
 - [specifications.md](specifications.md) — what the system does
 - [architecture.md](architecture.md) — how it's structured

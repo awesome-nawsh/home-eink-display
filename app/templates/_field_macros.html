@@ -1,0 +1,63 @@
+{% macro render_field(field_name, field_config, config) %}
+<div class="form-group">
+    <label for="{{ field_name }}">
+        {{ field_config.label }}
+        {% if field_config.required %}<span class="required">*</span>{% endif %}
+    </label>
+
+    {% if field_config.type == 'password' %}
+        <input
+            type="password"
+            id="{{ field_name }}"
+            name="{{ field_name }}"
+            value=""
+            placeholder="{% if config.get(field_name) %}(unchanged — leave blank to keep current value){% else %}(not set){% endif %}"
+        >
+    {% elif field_config.type == 'text' %}
+        <input
+            type="text"
+            id="{{ field_name }}"
+            name="{{ field_name }}"
+            value="{{ config.get(field_name, field_config.get('default', '')) }}"
+            placeholder="{{ field_config.get('placeholder', '') }}"
+            {% if field_config.required %}required{% endif %}
+        >
+    {% elif field_config.type == 'number' %}
+        <input
+            type="number"
+            id="{{ field_name }}"
+            name="{{ field_name }}"
+            value="{{ config.get(field_name, field_config.get('default', '')) }}"
+            {% if field_config.get('min') %}min="{{ field_config.min }}"{% endif %}
+            {% if field_config.get('max') %}max="{{ field_config.max }}"{% endif %}
+            {% if field_config.required %}required{% endif %}
+        >
+    {% elif field_config.type == 'select' %}
+        <select id="{{ field_name }}" name="{{ field_name }}" {% if field_config.required %}required{% endif %}>
+            <option value="">-- Select --</option>
+            {% for option in field_config.options %}
+                <option value="{{ option }}" {% if config.get(field_name) == option %}selected{% endif %}>
+                    {{ option if option else '(none)' }}
+                </option>
+            {% endfor %}
+        </select>
+    {% elif field_config.type == 'checkbox' %}
+        <div class="checkbox-wrapper">
+            <input
+                type="checkbox"
+                id="{{ field_name }}"
+                name="{{ field_name }}"
+                value="true"
+                {% if config.get(field_name, '').lower() == 'true' %}checked{% endif %}
+            >
+            <label for="{{ field_name }}" style="margin: 0;">Enable</label>
+        </div>
+    {% endif %}
+
+    {% if field_config.get('note') %}
+        <div class="helper-text">{{ field_config.note }}</div>
+    {% elif field_config.get('placeholder') and field_config.type != 'password' %}
+        <div class="helper-text">Example: {{ field_config.placeholder }}</div>
+    {% endif %}
+</div>
+{% endmacro %}

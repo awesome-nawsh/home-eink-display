@@ -1,0 +1,20 @@
+# original file and location /etc/systemd/system/web_config.service
+[Unit]
+Description=E-Ink Bus Display Web Config Panel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=seanj
+Group=gpio
+ExecStart=/usr/bin/python3 /home/seanj/singapore-bus-timing-edisplay/app/web_config.py
+WorkingDirectory=/home/seanj/singapore-bus-timing-edisplay/app
+StandardOutput=inherit
+StandardError=inherit
+Environment="PYTHONUNBUFFERED=1"
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

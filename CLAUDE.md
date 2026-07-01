@@ -6,6 +6,8 @@ A Raspberry Pi e-ink display that shows Singapore bus arrival times, MRT disrupt
 **Current version:** v13.0  
 **Status:** Production, running as a systemd service on a Raspberry Pi Zero W
 
+Setting this up from scratch? See [How-to.md](How-to.md) for the full step-by-step guide.
+
 ---
 
 ## Hardware
@@ -132,4 +134,7 @@ pip3 install -r requirements.txt
 - `bus_display.service` had a typo: `Restart=alwayson-falure` — fixed to `Restart=on-failure` in this repo. Re-deploy the service file to the Pi.
 - The `lib/waveshare_epd/` directory contains drivers for all Waveshare models. Only `epd7in5b_V2.py` is used. The others are kept for reference.
 - `.so` compiled binary files (ARM) are gitignored — they only work on the Pi and are installed via apt.
-- The web config panel (`web_config.py`) runs on port 5000. It's not started by the main service — run it separately or add a second service unit.
+- The web config panel (`web_config.py`) runs on port 5000. Deploy it as its own persistent service: `sudo cp systemd/web_config.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now web_config`.
+- `web_config.py` refuses to start unless `WEB_CONFIG_SECRET_KEY` and `WEB_CONFIG_PASSWORD_HASH` are set to real (non-placeholder) values in `.env` — see `.env.example` for the generation commands.
+- The web UI's "Restart Service" button (`/api/restart`) needs a one-time passwordless-sudo entry on the Pi: `sudo cp systemd/bus_display_restart.sudoers.example /etc/sudoers.d/bus_display_restart && sudo chmod 440 /etc/sudoers.d/bus_display_restart && sudo visudo -c`.
+- Secrets-at-rest: `app/.encryption_key` (gitignored, auto-generated on first run) encrypts password-type `.env` values saved through the web UI. Back this file up — losing it makes previously-encrypted secrets unrecoverable and they'd need to be re-entered.

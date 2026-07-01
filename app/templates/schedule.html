@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+{% if warnings %}
+<div class="card">
+    <h2>Schedule Conflicts</h2>
+    {% for warning in warnings %}
+        <div class="alert alert-info">{{ warning }}</div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<form method="POST" action="{{ url_for('save_schedule') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="card">
+        <h2>Screen Schedule</h2>
+        <p class="helper-text" style="margin-bottom: 20px;">
+            Precedence (fixed, not configurable): sleep_screen &gt; bus_train_screen &gt; daytime_screen &gt; ha_screen.
+            Overlapping windows are resolved by that order — see conflicts above.
+        </p>
+        {% for screen_name, window in schedule.screens.items() %}
+        <div class="screen-row">
+            <div class="form-group">
+                <label>{{ screen_name }}</label>
+            </div>
+            <div class="form-group">
+                <label for="{{ screen_name }}_start">Start</label>
+                <input type="time" id="{{ screen_name }}_start" name="{{ screen_name }}_start" value="{{ window.start }}" required>
+            </div>
+            <div class="form-group">
+                <label for="{{ screen_name }}_end">End</label>
+                <input type="time" id="{{ screen_name }}_end" name="{{ screen_name }}_end" value="{{ window.end }}" required>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="actions">
+        <button type="button" onclick="location.reload()" class="btn btn-secondary">Cancel</button>
+        <button type="submit" class="btn btn-primary">💾 Save Schedule</button>
+    </div>
+</form>
+{% endblock %}
