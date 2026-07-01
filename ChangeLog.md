@@ -1,5 +1,25 @@
 # Changelog - Bus Arrival Display
 
+## [V14] - Rewrite in progress (branch `v14-rewrite`)
+
+### Phase 1 — Module split (pure refactor, no behavior change)
+
+`app/main.py` (~1600 lines, monolithic) is split into focused modules. Every function/class keeps its current name, signature, and logic — this phase changes only where code lives, not what it does.
+
+- `app/config.py` — all environment variable loading, layout constants (`SCREEN_WIDTH`/`SCREEN_HEIGHT`/`COLUMN_OFFSET` and everything derived from them), `validate_configuration()`.
+- `app/health.py` — `Watchdog`, `SystemHealth`.
+- `app/fetchers.py` — `DataCache`, `BackoffManager`, the shared `http_session`, and every bus/train/weather/journey-time fetch function, `fetch_data_parallel()`.
+- `app/mqtt_client.py` — `MQTTClient`.
+- `app/render/common.py` — `MDI` icon table, font loaders, `DisplayManager`, `draw_mdi_icon`, `get_weather_icon`.
+- `app/render/bus_train.py` — the awake-screen draw functions and `display_combined_view()`.
+- `app/render/sleep_screen.py` — `display_sleep_screen()` (HA dashboard screenshot), name unchanged for this phase.
+- `app/render/debug_screen.py` — `display_debug_screen()`.
+- `app/main.py` — now orchestration only: startup validation, hardware init, boot screen, and the main loop, importing everything above.
+
+`app/web_config.py` and `systemd/bus_display.service` are untouched by this phase.
+
+This is Phase 1 of a larger, multi-phase rewrite (new screen types, a day-type-aware scheduler, `web_config.py` security/feature rewrite, dynamic config reload) — see `architecture.md`, `design.md` for the updated module layout, and later `[V14]` entries here as subsequent phases land.
+
 ## [V13] - 2025-01-XX
 
 ### 🎯 Major Features
