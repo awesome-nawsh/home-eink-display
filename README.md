@@ -68,6 +68,30 @@ The display cycles through four screens on independent schedules (configurable v
 
 A password-protected web config panel (`http://<pi-ip>:5000`) lets you edit settings and the schedule from a browser, with live conflict-checking and no SSH required for most changes.
 
+#### The new screens
+
+<img src="images/screen_boot.png" width=400> <img src="images/screen_sleep.png" width=400>
+
+*Boot connectivity checklist (left) and the overnight sleep screen (right) — both purely local, no network fetch for the sleep screen.*
+
+<img src="images/screen_daytime.png" width=400>
+
+*The daytime placeholder screen — shown on non-school days for now, real content still on the roadmap.*
+
+#### The web config panel
+
+<img src="images/webconfig_login.png" width=500>
+
+<img src="images/webconfig_settings.png" width=500>
+
+*Settings page — fields marked "applies live" (like `FORCE_SCREEN`) take effect within moments; everything else needs the "Restart Service" button.*
+
+<img src="images/webconfig_schedule.png" width=500>
+
+*Schedule editor — shows precedence conflicts before you save, so overlapping windows don't surprise you.*
+
+(Screenshots above use sample/placeholder data, not a real deployment's actual configuration.)
+
 ### Future Enhancement Ideas
 
 Potential features for future versions (see `todo.md` in this repo for the fuller, actively-maintained list):
