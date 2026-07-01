@@ -64,6 +64,7 @@ BOTTOM_FONT_SIZE = 14
 BOTTOM_MARGIN = 35
 TOP_MARGIN = 20
 DIVIDER_WIDTH = 2
+WEATHER_SECTION_HEIGHT = 140  # px reserved at the bottom of the right column for weather
 
 # Standard font sizes (consolidated)
 FONT_SMALL = 12
@@ -1133,7 +1134,7 @@ def draw_weather_section_right(draw, draw_r, weather_info, x_start, epd_width, e
         return
     
     # Position weather in right column - fixed position from bottom
-    weather_y = epd_height - 140  # 140px from bottom to give more space
+    weather_y = epd_height - WEATHER_SECTION_HEIGHT
     
     # Draw separator line
     draw_r.line((x_start, weather_y, epd_width - 10, weather_y), fill=0, width=1)
@@ -1163,7 +1164,7 @@ def draw_weather_section_right(draw, draw_r, weather_info, x_start, epd_width, e
         draw_mdi_icon(draw_r, x_start, weather_y + 65, MDI.WATER_PERCENT, size=18, color=0)
         draw_r.text((x_start + 23, weather_y + 65), f"{humidity}%", font=get_font(14), fill=0)
 
-def draw_train_section(draw, draw_r, train_info, train_x, epd_width):
+def draw_train_section(draw, draw_r, train_info, train_x, epd_width, epd_height):
     """Draw the train disruption section and return final y position."""
     train_font = get_font(20)
     train_header_font = get_font_bold(28)
@@ -1205,12 +1206,13 @@ def draw_train_section(draw, draw_r, train_info, train_x, epd_width):
                 y_offset += 24
             
             y_offset += 15
-            
-            # Stop if getting too long to leave room for weather
-            if y_offset > epd_width - 200:
+
+            # Stop if getting too long to leave room for weather (which starts
+            # at epd_height - WEATHER_SECTION_HEIGHT in the same column)
+            if y_offset > epd_height - WEATHER_SECTION_HEIGHT:
                 break
-        
-        if train_info.get('content') and y_offset < epd_width - 180:
+
+        if train_info.get('content') and y_offset < epd_height - WEATHER_SECTION_HEIGHT + 20:
             y_offset += 10
             draw_r.line((train_x, y_offset, epd_width - 10, y_offset), fill=0, width=1)
             y_offset += 15
@@ -1258,7 +1260,7 @@ def display_combined_view(display_mgr, font, bus_info, train_info, weather_info,
     train_x = column_offset + 20
     
     # Draw train status
-    final_train_y = draw_train_section(draw, draw_r, train_info, train_x, epd.width)
+    final_train_y = draw_train_section(draw, draw_r, train_info, train_x, epd.width, epd.height)
     
     # Draw weather below train status in right column
     draw_weather_section_right(draw, draw_r, weather_info, train_x, epd.width, epd.height)

@@ -118,7 +118,7 @@ Default row count shown: **3 bus boxes** (`bus_box_1/2/3` at y=80/185/290) — a
 - `"Line: {Line}"` at `(train_x+25, y_offset)`, Regular 20pt, **red**; +32.
 - `"Dir: {Direction}"`, Regular 20pt, **black**; +32.
 - Affected-station list, wrapped to 22 chars, up to 2 lines, Regular 16pt, **black**, +24 each.
-- +15px gap between disruptions; loop breaks if `y_offset > epd_width - 200` (room guard).
+- +15px gap between disruptions; loop breaks if `y_offset > epd_height - WEATHER_SECTION_HEIGHT` (340) — the room guard that keeps disruption text from overlapping the weather section, anchored to where the weather divider actually starts.
 - If `train_info['content']` present and room allows: divider (**red**), "Alert:" icon+label (Regular 16pt, **red**), then wrapped advisory text, up to 3 lines, Regular 14pt, **black**, +22 each.
 
 This section's real footprint is dynamic — the box shown in the layout tool (`train_body`, `y=70, h=190`) is an approximate placeholder, not a fixed bound.
