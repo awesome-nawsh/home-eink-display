@@ -5,6 +5,9 @@
 # Real schedule config (per-deployment) — schedule_config.json.example is the committed template
 app/schedule_config.json
 
+# Secrets-at-rest encryption key (per-deployment, same treatment as .env)
+app/.encryption_key
+
 # Python
 __pycache__/
 *.py[cod]

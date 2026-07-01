@@ -1,599 +1,302 @@
 #!/usr/bin/env python3
 """
 E-ink Display Web Configuration Panel
-A simple web interface to manage .env configuration without SSH
+A Flask web interface to manage .env / schedule_config.json without SSH.
+
+Auth: real signed Flask `session` (itsdangerous, keyed by app.secret_key) —
+NOT a bare cookie check. A tampered/forged cookie fails signature
+verification and is treated as an empty (logged-out) session. See
+validate_web_config() for the startup guard that refuses to run with a
+placeholder secret key or default password.
 """
-
 import os
-import sys
-from flask import Flask, render_template_string, request, redirect, url_for, flash, jsonify
-from werkzeug.security import check_password_hash, generate_password_hash
-from dotenv import load_dotenv, set_key, unset_key
-import json
-from datetime import datetime
+import secrets
 import subprocess
+import sys
+from datetime import datetime, timedelta
+from functools import wraps
 
-# Load environment variables 
-load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
+from flask import (
+    Flask, render_template, request, redirect, url_for, flash, jsonify, session,
+)
+from werkzeug.security import check_password_hash
+import paho.mqtt.publish as mqtt_publish
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+from scheduler import load_schedule_config, validate_schedule, detect_overlaps
+from secrets_vault import get_or_create_key, encrypt_value
+from web_config_schema import CONFIG_SCHEMA
+from web_config_env import read_env_file, build_env_updates, atomic_write_env_file
+from web_config_schedule_forms import schedule_from_form, atomic_write_json
+
+from dotenv import load_dotenv
+
+APP_DIR = os.path.dirname(os.path.realpath(__file__))
+ENV_FILE = os.path.join(APP_DIR, '.env')
+load_dotenv(ENV_FILE)
 
 app = Flask(__name__)
-app.secret_key = os.getenv('WEB_CONFIG_SECRET_KEY', 'BusAuntieSK')
 
-# Configuration
+# --- Configuration -----------------------------------------------------
 WEB_CONFIG_PORT = int(os.getenv('WEB_CONFIG_PORT', '5000'))
 WEB_CONFIG_HOST = os.getenv('WEB_CONFIG_HOST', '0.0.0.0')
 WEB_CONFIG_USERNAME = os.getenv('WEB_CONFIG_USERNAME', 'admin')
-WEB_CONFIG_PASSWORD_HASH = os.getenv('WEB_CONFIG_PASSWORD_HASH', 
-                                      generate_password_hash('admin123'))  # Default password
+# No hardcoded fallbacks for either of these — an unset value means
+# validate_web_config() refuses to start rather than running with a
+# well-known secret/password.
+WEB_CONFIG_SECRET_KEY = os.getenv('WEB_CONFIG_SECRET_KEY', '')
+WEB_CONFIG_PASSWORD_HASH = os.getenv('WEB_CONFIG_PASSWORD_HASH', '')
 
-ENV_FILE = os.path.join(os.path.dirname(__file__), '.env')
+SCHEDULE_CONFIG_PATH = os.getenv(
+    'SCHEDULE_CONFIG_PATH', os.path.join(APP_DIR, 'schedule_config.json')
+)
+WAKE_HOUR = int(os.getenv('WAKE_HOUR', '7'))
+SLEEP_HOUR = int(os.getenv('SLEEP_HOUR', '22'))
 
-# Configuration categories and their variables
-CONFIG_SCHEMA = {
-'Core Settings': {
-    'API_KEY': {'type': 'password', 'label': 'LTA DataMall API Key', 'required': True},
-    'BUS_STOP_CODE_A': {'type': 'text', 'label': 'Bus Stop Code', 'required': True},
-    'A_HEADER': {'type': 'text', 'label': 'Bus Stop Display Name', 'required': False},
-    'API_BUS_URL': {'type': 'text', 'label': 'Bus Arrival API URL', 'required': False, 'default': 'http://datamall2.mytransport.sg/ltaodataservice/BusArrivalv2?BusStopCode='},
-    'API_TRAIN_URL': {'type': 'text', 'label': 'Train Service Alerts API URL', 'required': False, 'default': 'http://datamall2.mytransport.sg/ltaodataservice/TrainServiceAlerts'},
-    'API_BUS_STOP_INFO_URL': {'type': 'text', 'label': 'Bus Stop Info API URL', 'required': False, 'default': 'https://datamall2.mytransport.sg/ltaodataservice/BusStops?BusStopCode='},
-    'LOG_LEVEL': {'type': 'select', 'label': 'Log Level', 'options': ['DEBUG', 'INFO', 'WARNING', 'ERROR'], 'required': False},
-},
-    'Journey Time Settings': {
-        'SHOW_JOURNEY_TIME': {'type': 'checkbox', 'label': 'Enable Journey Time Tracking', 'required': False},
-        'BUS_SERVICES_TO_TRACK': {'type': 'text', 'label': 'Bus Services to Track (comma-separated)', 'required': False, 'placeholder': '67,969,75'},
-        'JOURNEY_DESTINATION': {'type': 'text', 'label': 'Journey Destination', 'required': False, 'placeholder': 'School Name, Singapore'},
-        'JOURNEY_DESTINATION_SHORT': {'type': 'text', 'label': 'Short Display Name (optional)', 'required': False, 'placeholder': 'School'},
-        'ROUTING_API_PROVIDER': {'type': 'select', 'label': 'Routing API Provider', 'options': ['onemap', 'google'], 'required': False},
-        'GOOGLE_MAPS_API_KEY': {'type': 'password', 'label': 'Google Maps API Key', 'required': False},
-        'ONEMAP_API_KEY': {'type': 'password', 'label': 'OneMap API Key (optional)', 'required': False},
-        'JOURNEY_TIME_CACHE_DURATION': {'type': 'number', 'label': 'Journey Cache Duration (seconds)', 'required': False, 'default': '1800'},
-    },
-    'Schedule Settings': {
-        'WAKE_HOUR': {'type': 'number', 'label': 'Wake Hour (24hr format)', 'required': False, 'default': '7', 'min': '0', 'max': '23'},
-        'SLEEP_HOUR': {'type': 'number', 'label': 'Sleep Hour (24hr format)', 'required': False, 'default': '22', 'min': '0', 'max': '23'},
-        'WAKE_INTERVAL': {'type': 'number', 'label': 'Wake Update Interval (seconds)', 'required': False, 'default': '30'},
-        'SLEEP_INTERVAL': {'type': 'number', 'label': 'Sleep Update Interval (seconds)', 'required': False, 'default': '300'},
-        'DEBUG_SKIP_TIME_CHECK': {'type': 'checkbox', 'label': 'Debug Mode (Always Awake)', 'required': False},
-    },
-    'Home Assistant': {
-        'HOME_ASSISTANT_API_URL': {'type': 'text', 'label': 'Home Assistant API URL', 'required': False, 'placeholder': 'http://homeassistant.local:8123'},
-        'HOME_ASSISTANT_TOKEN': {'type': 'password', 'label': 'Home Assistant Long-Lived Token', 'required': False},
-        'HOME_ASSISTANT_WEATHER_ENTITY': {'type': 'text', 'label': 'Weather Entity ID', 'required': False, 'default': 'weather.home'},
-        'HOME_ASSISTANT_SLEEP_URL': {'type': 'text', 'label': 'Sleep Screen URL', 'required': False},
-        'WEATHER_CACHE_DURATION': {'type': 'number', 'label': 'Weather Cache Duration (seconds)', 'required': False, 'default': '1800'},
-    },
-    'MQTT Settings': {
-        'MQTT_ENABLED': {'type': 'checkbox', 'label': 'Enable MQTT', 'required': False},
-        'MQTT_BROKER': {'type': 'text', 'label': 'MQTT Broker Address', 'required': False, 'default': 'localhost'},
-        'MQTT_PORT': {'type': 'number', 'label': 'MQTT Port', 'required': False, 'default': '1883'},
-        'MQTT_USERNAME': {'type': 'text', 'label': 'MQTT Username', 'required': False},
-        'MQTT_PASSWORD': {'type': 'password', 'label': 'MQTT Password', 'required': False},
-        'MQTT_TOPIC_REFRESH': {'type': 'text', 'label': 'Refresh Topic', 'required': False, 'default': 'eink/display/refresh'},
-        'MQTT_TOPIC_STATUS': {'type': 'text', 'label': 'Status Topic', 'required': False, 'default': 'eink/display/status'},
-    },
-}
+SECRETS_KEY_PATH = os.getenv('SECRETS_KEY_PATH', os.path.join(APP_DIR, '.encryption_key'))
 
-# HTML Template
-HTML_TEMPLATE = '''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>E-ink Display Configuration</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
-        }
-        
-        .header {
-            background: white;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        
-        .header h1 {
-            color: #333;
-            font-size: 28px;
-            margin-bottom: 10px;
-        }
-        
-        .header p {
-            color: #666;
-            font-size: 14px;
-        }
-        
-        .status-bar {
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .status-item {
-            text-align: center;
-        }
-        
-        .status-label {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 5px;
-        }
-        
-        .status-value {
-            font-size: 18px;
-            font-weight: bold;
-            color: #333;
-        }
-        
-        .card {
-            background: white;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        
-        .card h2 {
-            color: #333;
-            font-size: 20px;
-            margin-bottom: 20px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #667eea;
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: #333;
-            font-weight: 500;
-            font-size: 14px;
-        }
-        
-        .form-group input[type="text"],
-        .form-group input[type="password"],
-        .form-group input[type="number"],
-        .form-group select {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-        
-        .form-group input:focus,
-        .form-group select:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        
-        .form-group input[type="checkbox"] {
-            width: 20px;
-            height: 20px;
-            cursor: pointer;
-        }
-        
-        .checkbox-wrapper {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 12px rgba(102, 126, 234, 0.4);
-        }
-        
-        .btn-secondary {
-            background: #f0f0f0;
-            color: #333;
-        }
-        
-        .btn-secondary:hover {
-            background: #e0e0e0;
-        }
-        
-        .btn-danger {
-            background: #ef4444;
-            color: white;
-        }
-        
-        .btn-danger:hover {
-            background: #dc2626;
-        }
-        
-        .actions {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-            margin-top: 30px;
-        }
-        
-        .alert {
-            padding: 15px 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            font-size: 14px;
-        }
-        
-        .alert-success {
-            background: #d1fae5;
-            color: #065f46;
-            border: 1px solid #a7f3d0;
-        }
-        
-        .alert-error {
-            background: #fee2e2;
-            color: #991b1b;
-            border: 1px solid #fecaca;
-        }
-        
-        .alert-info {
-            background: #dbeafe;
-            color: #1e40af;
-            border: 1px solid #bfdbfe;
-        }
-        
-        .helper-text {
-            font-size: 12px;
-            color: #666;
-            margin-top: 5px;
-        }
-        
-        .required {
-            color: #ef4444;
-        }
-        
-        @media (max-width: 768px) {
-            .status-bar {
-                flex-direction: column;
-                gap: 15px;
-            }
-            
-            .actions {
-                flex-direction: column;
-            }
-            
-            .btn {
-                width: 100%;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        {% if not logged_in %}
-        <!-- Login Form -->
-        <div class="header">
-            <h1>🔐 E-ink Display Configuration</h1>
-            <p>Please log in to continue</p>
-        </div>
-        
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }}">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-        
-        <div class="card">
-            <form method="POST" action="{{ url_for('login') }}">
-                <div class="form-group">
-                    <label for="username">Username</label>
-                    <input type="text" id="username" name="username" required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required>
-                </div>
-                
-                <div class="actions">
-                    <button type="submit" class="btn btn-primary">Login</button>
-                </div>
-            </form>
-        </div>
-        
-        {% else %}
-        <!-- Main Configuration Interface -->
-        <div class="header">
-            <h1>🖥️ E-ink Display Configuration</h1>
-            <p>Manage your e-ink display settings</p>
-        </div>
-        
-        <div class="status-bar">
-            <div class="status-item">
-                <div class="status-label">Configuration</div>
-                <div class="status-value" style="color: #10b981;">✓ Loaded</div>
-            </div>
-            <div class="status-item">
-                <div class="status-label">Last Updated</div>
-                <div class="status-value">{{ last_updated }}</div>
-            </div>
-            <div class="status-item">
-                <button onclick="triggerRefresh()" class="btn btn-secondary">🔄 Refresh Display</button>
-            </div>
-            <div class="status-item">
-                <a href="{{ url_for('logout') }}" class="btn btn-secondary">Logout</a>
-            </div>
-        </div>
-        
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }}">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-        
-        <form method="POST" action="{{ url_for('save_config') }}">
-            {% for category, fields in config_schema.items() %}
-            <div class="card">
-                <h2>{{ category }}</h2>
-                
-                {% for field_name, field_config in fields.items() %}
-                <div class="form-group">
-                    <label for="{{ field_name }}">
-                        {{ field_config.label }}
-                        {% if field_config.required %}<span class="required">*</span>{% endif %}
-                    </label>
-                    
-                    {% if field_config.type == 'text' or field_config.type == 'password' %}
-                        <input 
-                            type="{{ field_config.type }}" 
-                            id="{{ field_name }}" 
-                            name="{{ field_name }}"
-                            value="{{ config.get(field_name, field_config.get('default', '')) }}"
-                            placeholder="{{ field_config.get('placeholder', '') }}"
-                            {% if field_config.required %}required{% endif %}
-                        >
-                    {% elif field_config.type == 'number' %}
-                        <input 
-                            type="number" 
-                            id="{{ field_name }}" 
-                            name="{{ field_name }}"
-                            value="{{ config.get(field_name, field_config.get('default', '')) }}"
-                            {% if field_config.get('min') %}min="{{ field_config.min }}"{% endif %}
-                            {% if field_config.get('max') %}max="{{ field_config.max }}"{% endif %}
-                            {% if field_config.required %}required{% endif %}
-                        >
-                    {% elif field_config.type == 'select' %}
-                        <select id="{{ field_name }}" name="{{ field_name }}" {% if field_config.required %}required{% endif %}>
-                            <option value="">-- Select --</option>
-                            {% for option in field_config.options %}
-                                <option value="{{ option }}" {% if config.get(field_name) == option %}selected{% endif %}>
-                                    {{ option }}
-                                </option>
-                            {% endfor %}
-                        </select>
-                    {% elif field_config.type == 'checkbox' %}
-                        <div class="checkbox-wrapper">
-                            <input 
-                                type="checkbox" 
-                                id="{{ field_name }}" 
-                                name="{{ field_name }}"
-                                value="true"
-                                {% if config.get(field_name, '').lower() == 'true' %}checked{% endif %}
-                            >
-                            <label for="{{ field_name }}" style="margin: 0;">Enable</label>
-                        </div>
-                    {% endif %}
-                    
-                    {% if field_config.get('placeholder') %}
-                        <div class="helper-text">Example: {{ field_config.placeholder }}</div>
-                    {% endif %}
-                </div>
-                {% endfor %}
-            </div>
-            {% endfor %}
-            
-            <div class="actions">
-                <button type="button" onclick="location.reload()" class="btn btn-secondary">Cancel</button>
-                <button type="submit" class="btn btn-primary">💾 Save Configuration</button>
-            </div>
-        </form>
-        {% endif %}
-    </div>
-    
-    <script>
-        function triggerRefresh() {
-            fetch('/api/refresh', { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert('✓ Display refresh triggered!');
-                    } else {
-                        alert('✗ Failed to trigger refresh: ' + data.error);
-                    }
-                })
-                .catch(error => {
-                    alert('✗ Error: ' + error);
-                });
-        }
-    </script>
-</body>
-</html>
-'''
+KNOWN_BAD_SECRET_KEYS = {'', 'BusAuntieSK', 'change_this_to_a_random_string'}
 
-def read_env_file():
-    """Read current .env file configuration"""
-    config = {}
-    if os.path.exists(ENV_FILE):
-        with open(ENV_FILE, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    key, value = line.split('=', 1)
-                    config[key.strip()] = value.strip()
-    return config
+app.secret_key = WEB_CONFIG_SECRET_KEY
+app.permanent_session_lifetime = timedelta(hours=8)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+# SESSION_COOKIE_SECURE deliberately left unset/False: this runs over plain
+# HTTP on a LAN, no TLS. Setting it True would break login entirely.
 
-def write_env_file(config):
-    """Write configuration to .env file"""
-    for key, value in config.items():
-        if value:
-            set_key(ENV_FILE, key, value)
-        else:
-            unset_key(ENV_FILE, key)
+
+def validate_web_config():
+    """Startup guard: refuses to start with a placeholder secret key or an
+    unset password hash (which would otherwise silently fall back to a
+    well-known default password). Mirrors config.py's validate_configuration()."""
+    errors = []
+    if WEB_CONFIG_SECRET_KEY in KNOWN_BAD_SECRET_KEYS:
+        errors.append("WEB_CONFIG_SECRET_KEY is unset or is a known placeholder value")
+    if not WEB_CONFIG_PASSWORD_HASH:
+        errors.append("WEB_CONFIG_PASSWORD_HASH is unset (would otherwise default to a well-known password)")
+
+    if not errors:
+        return True
+
+    print("=" * 60, file=sys.stderr)
+    print("web_config.py refuses to start with insecure defaults:", file=sys.stderr)
+    for e in errors:
+        print(f"  - {e}", file=sys.stderr)
+    print(file=sys.stderr)
+    print("Generate a secret key with:", file=sys.stderr)
+    print('  python3 -c "import secrets; print(secrets.token_hex(32))"', file=sys.stderr)
+    print("Generate a password hash with:", file=sys.stderr)
+    print('  python3 -c "from werkzeug.security import generate_password_hash; print(generate_password_hash(\'your_password\'))"', file=sys.stderr)
+    print("Add both to app/.env as WEB_CONFIG_SECRET_KEY= and WEB_CONFIG_PASSWORD_HASH=", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+    return False
+
 
 def check_auth(username, password):
-    """Check if username/password combination is valid"""
-    return username == WEB_CONFIG_USERNAME and check_password_hash(WEB_CONFIG_PASSWORD_HASH, password)
+    if not WEB_CONFIG_PASSWORD_HASH:
+        return False
+    try:
+        return username == WEB_CONFIG_USERNAME and check_password_hash(WEB_CONFIG_PASSWORD_HASH, password)
+    except ValueError:
+        return False
 
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get('logged_in'):
+            if request.path.startswith('/api/'):
+                return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+            return redirect(url_for('index'))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+# --- CSRF ----------------------------------------------------------------
+CSRF_PROTECTED_ENDPOINTS = {'login', 'save_config', 'save_schedule', 'api_restart', 'api_refresh'}
+
+
+def get_csrf_token():
+    """Generates and stores a per-session CSRF token if one doesn't exist
+    yet, so it's available before login (the login form itself needs one)."""
+    if 'csrf_token' not in session:
+        session['csrf_token'] = secrets.token_hex(16)
+    return session['csrf_token']
+
+
+@app.before_request
+def check_csrf():
+    if request.method != 'POST' or request.endpoint not in CSRF_PROTECTED_ENDPOINTS:
+        return None
+    submitted = request.form.get('csrf_token') or request.headers.get('X-CSRF-Token', '')
+    expected = session.get('csrf_token', '')
+    if not expected or not secrets.compare_digest(submitted, expected):
+        if request.path.startswith('/api/'):
+            return jsonify({'success': False, 'error': 'Invalid or missing CSRF token'}), 400
+        flash('Your session expired or the form was resubmitted — please try again.', 'error')
+        return redirect(url_for('index'))
+    return None
+
+
+@app.context_processor
+def inject_csrf_token():
+    return {'csrf_token': get_csrf_token()}
+
+
+# --- Routes ----------------------------------------------------------------
 @app.route('/')
 def index():
-    """Main configuration page"""
-    logged_in = request.cookies.get('logged_in') == 'true'
-    
-    if not logged_in:
-        return render_template_string(HTML_TEMPLATE, 
-                                     logged_in=False)
-    
-    config = read_env_file()
-    last_updated = datetime.fromtimestamp(os.path.getmtime(ENV_FILE)).strftime('%Y-%m-%d %H:%M') if os.path.exists(ENV_FILE) else 'Never'
-    
-    return render_template_string(HTML_TEMPLATE, 
-                                 logged_in=True,
-                                 config=config,
-                                 config_schema=CONFIG_SCHEMA,
-                                 last_updated=last_updated)
+    if not session.get('logged_in'):
+        return render_template('login.html')
+
+    config = read_env_file(ENV_FILE)
+    last_updated = (
+        datetime.fromtimestamp(os.path.getmtime(ENV_FILE)).strftime('%Y-%m-%d %H:%M')
+        if os.path.exists(ENV_FILE) else 'Never'
+    )
+    return render_template(
+        'index.html', config=config, config_schema=CONFIG_SCHEMA, last_updated=last_updated,
+    )
+
 
 @app.route('/login', methods=['POST'])
 def login():
-    """Handle login"""
-    username = request.form.get('username')
-    password = request.form.get('password')
-    
+    username = request.form.get('username', '')
+    password = request.form.get('password', '')
     if check_auth(username, password):
-        response = redirect(url_for('index'))
-        response.set_cookie('logged_in', 'true', max_age=3600*8)  # 8 hours
+        session.clear()
+        session['logged_in'] = True
+        session.permanent = True
         flash('Successfully logged in!', 'success')
-        return response
     else:
         flash('Invalid username or password', 'error')
-        return redirect(url_for('index'))
+    return redirect(url_for('index'))
+
 
 @app.route('/logout')
 def logout():
-    """Handle logout"""
-    response = redirect(url_for('index'))
-    response.set_cookie('logged_in', '', expires=0)
+    session.clear()
     flash('Successfully logged out', 'info')
-    return response
-
-@app.route('/save', methods=['POST'])
-def save_config():
-    """Save configuration"""
-    if request.cookies.get('logged_in') != 'true':
-        return redirect(url_for('index'))
-    
-    # Read form data
-    new_config = {}
-    for category, fields in CONFIG_SCHEMA.items():
-        for field_name, field_config in fields.items():
-            if field_config['type'] == 'checkbox':
-                new_config[field_name] = 'true' if request.form.get(field_name) == 'true' else 'false'
-            else:
-                value = request.form.get(field_name, '').strip()
-                if value:
-                    new_config[field_name] = value
-    
-    # Write to .env file
-    try:
-        write_env_file(new_config)
-        flash('Configuration saved successfully! Restart the display service to apply changes.', 'success')
-    except Exception as e:
-        flash(f'Error saving configuration: {str(e)}', 'error')
-    
     return redirect(url_for('index'))
 
-@app.route('/api/refresh', methods=['POST'])
-def api_refresh():
-    """Trigger manual display refresh via MQTT"""
-    if request.cookies.get('logged_in') != 'true':
-        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
-    
+
+@app.route('/save', methods=['POST'])
+@login_required
+def save_config():
+    def encrypt_fn(value):
+        return encrypt_value(value, get_or_create_key(SECRETS_KEY_PATH))
+
+    to_set, to_unset = build_env_updates(request.form, CONFIG_SCHEMA, encrypt_fn)
     try:
-        # Try to publish MQTT message
-        import paho.mqtt.publish as publish
-        
+        atomic_write_env_file(ENV_FILE, to_set, to_unset)
+        flash('Configuration saved. Restart the service to apply changes.', 'success')
+    except OSError as e:
+        flash(f'Error saving configuration: {e}', 'error')
+
+    return redirect(url_for('index'))
+
+
+@app.route('/schedule')
+@login_required
+def schedule_page():
+    schedule = load_schedule_config(SCHEDULE_CONFIG_PATH, WAKE_HOUR, SLEEP_HOUR)
+    warnings = detect_overlaps(schedule)
+    return render_template('schedule.html', schedule=schedule, warnings=warnings)
+
+
+@app.route('/save_schedule', methods=['POST'])
+@login_required
+def save_schedule():
+    candidate = schedule_from_form(request.form)
+    errors = validate_schedule(candidate)
+    if errors:
+        for e in errors:
+            flash(e, 'error')
+        return redirect(url_for('schedule_page'))
+
+    try:
+        atomic_write_json(SCHEDULE_CONFIG_PATH, candidate)
+    except OSError as e:
+        flash(f'Error saving schedule: {e}', 'error')
+        return redirect(url_for('schedule_page'))
+
+    for w in detect_overlaps(candidate):
+        flash(w, 'info')
+    flash('Schedule saved. Restart the service to apply changes.', 'success')
+    return redirect(url_for('schedule_page'))
+
+
+@app.route('/api/refresh', methods=['POST'])
+@login_required
+def api_refresh():
+    """Trigger an immediate data refresh via MQTT (no service restart)."""
+    try:
         mqtt_broker = os.getenv('MQTT_BROKER', 'localhost')
         mqtt_port = int(os.getenv('MQTT_PORT', '1883'))
         mqtt_topic = os.getenv('MQTT_TOPIC_REFRESH', 'eink/display/refresh')
-        
+
         auth = None
         if os.getenv('MQTT_USERNAME') and os.getenv('MQTT_PASSWORD'):
             auth = {'username': os.getenv('MQTT_USERNAME'), 'password': os.getenv('MQTT_PASSWORD')}
-        
-        publish.single(mqtt_topic, 'refresh', hostname=mqtt_broker, port=mqtt_port, auth=auth)
-        
+
+        mqtt_publish.single(mqtt_topic, 'refresh', hostname=mqtt_broker, port=mqtt_port, auth=auth)
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.route('/api/restart', methods=['POST'])
+@login_required
+def api_restart():
+    """Restart the bus_display systemd service — required for .env/schedule
+    changes to take effect (config is only loaded once at process start).
+    Requires a one-time passwordless-sudo setup; see
+    systemd/bus_display_restart.sudoers.example."""
+    try:
+        subprocess.run(
+            ['sudo', 'systemctl', 'restart', 'bus_display'],
+            capture_output=True, text=True, timeout=15, check=True,
+        )
+        return jsonify({'success': True})
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            'success': False,
+            'error': 'Restart command timed out after 15s. Check `systemctl status bus_display` on the Pi.',
+        }), 500
+    except subprocess.CalledProcessError as e:
+        return jsonify({
+            'success': False,
+            'error': (
+                'Restart failed (permission denied or systemctl error). This requires a '
+                'one-time passwordless-sudo setup — see systemd/bus_display_restart.sudoers.example. '
+                f'Details: {(e.stderr or e.stdout or "").strip()}'
+            ),
+        }), 500
+    except FileNotFoundError:
+        return jsonify({'success': False, 'error': 'sudo or systemctl not found on this system'}), 500
+
+
 @app.route('/api/status')
+@login_required
 def api_status():
-    """Get system status"""
-    if request.cookies.get('logged_in') != 'true':
-        return jsonify({'error': 'Not authenticated'}), 401
-    
     return jsonify({
         'config_exists': os.path.exists(ENV_FILE),
-        'last_modified': datetime.fromtimestamp(os.path.getmtime(ENV_FILE)).isoformat() if os.path.exists(ENV_FILE) else None
+        'last_modified': (
+            datetime.fromtimestamp(os.path.getmtime(ENV_FILE)).isoformat()
+            if os.path.exists(ENV_FILE) else None
+        ),
     })
 
+
 if __name__ == '__main__':
+    if not validate_web_config():
+        sys.exit(1)
+
     print("=" * 60)
     print("E-ink Display Web Configuration Panel")
     print("=" * 60)
     print(f"\n🌐 Access at: http://{WEB_CONFIG_HOST}:{WEB_CONFIG_PORT}")
-    print(f"👤 Default username: {WEB_CONFIG_USERNAME}")
-    print(f"🔑 Default password: admin123")
-    print("\n⚠️  IMPORTANT: Change the default password in .env!")
-    print("   Add: WEB_CONFIG_PASSWORD_HASH=<your_hash>")
-    print("\n   Generate hash with:")
-    print("   python3 -c \"from werkzeug.security import generate_password_hash; print(generate_password_hash('your_password'))\"")
+    print(f"👤 Username: {WEB_CONFIG_USERNAME}")
     print("\n" + "=" * 60 + "\n")
-    
+
     app.run(host=WEB_CONFIG_HOST, port=WEB_CONFIG_PORT, debug=False)

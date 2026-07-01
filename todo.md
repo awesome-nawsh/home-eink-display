@@ -70,16 +70,50 @@ Code plan file) for the full design rationale behind each phase.
 - [ ] Richer `ha_screen` behavior (e.g. theme/config surfaced once `web_config.py` is rewritten)
 - [ ] Real content for `daytime_screen` (currently a placeholder)
 - [ ] Distinguish `work_day` vs `off_day` content/behavior (Phase 2 treats both as "not school_day")
-- [ ] Surface schedule-conflict warnings in a web-config UI (needs the Phase 3 `web_config.py` rewrite)
+- [x] Surface schedule-conflict warnings in a web-config UI — done in Phase 3 (`/schedule` page)
 - [ ] Multi-period-per-day schedules (Phase 2 supports exactly one start/end window per screen)
 - [ ] `tools/layout_editor.html` — reflect the `sleep_screen`/`ha_screen`/`daytime_screen` rename/split
       (its "Sleep screen" tab currently means the old HA-dashboard behavior, now `ha_screen` —
       ambiguous now that a true `sleep_screen` also exists)
 
-## Phase 3 (not started)
+## Phase 3 — `web_config.py` rewrite: session auth, scheduler UI, `/api/restart`, secrets at rest
 
-- [ ] `web_config.py` rewrite: session-based auth, secret/password startup guards, Jinja templates,
-      scheduler UI (including conflict-warning display), `/api/restart`
+### Auth
+- [x] Real signed Flask `session` (itsdangerous) replacing the forgeable `logged_in=true` cookie
+- [x] Minimal `login_required` decorator; `/api/*` routes return 401 JSON, HTML routes redirect
+- [x] Minimal hand-rolled CSRF token (session-stored, checked on state-changing POSTs) — no new dependency
+- [x] `validate_web_config()` startup guard — hard-fails on unset/placeholder `WEB_CONFIG_SECRET_KEY`
+      or unset `WEB_CONFIG_PASSWORD_HASH`, no more insecure fallback defaults
+
+### Secrets at rest
+- [x] `app/secrets_vault.py` — Fernet encrypt/decrypt (`cryptography` dependency), `enc:`-prefixed
+      storage, plaintext passthrough for pre-existing values, `app/.encryption_key` (gitignored, 0o600)
+- [x] `config.py` decrypts the 5 password-type vars transparently on read
+- [x] Password fields never echo their value back into rendered HTML; blank submission = unchanged
+
+### Scheduler UI
+- [x] `GET /schedule` + `POST /save_schedule` — edits `schedule_config.json`'s 4 screen windows,
+      reuses `scheduler.validate_schedule()`/`detect_overlaps()`, atomic write-then-rename
+- [x] `CONFIG_SCHEMA` updated: fixed stale `http://` defaults, `HOME_ASSISTANT_DASHBOARD_URL` rename,
+      new "Day-Type & Scheduler" category incl. `FORCE_SCREEN` as a dropdown, legacy fields relabeled
+
+### `/api/restart`
+- [x] New route, restarts `bus_display` via `systemctl` (kept alongside the existing MQTT-based
+      `/api/refresh`, distinct purposes)
+- [x] `systemd/bus_display_restart.sudoers.example` — documented, not auto-installed
+- [x] `systemd/web_config.service` — new persistent unit for the panel itself
+
+### Templates & structure
+- [x] `app/templates/` (Jinja files) + `app/static/` (CSS/JS) replacing the inline `HTML_TEMPLATE` string
+- [x] Split into `web_config_schema.py`/`web_config_env.py`/`web_config_schedule_forms.py`/`secrets_vault.py`
+
+### Testing
+- [x] `tests/test_secrets_vault.py`, `test_web_config_env.py`, `test_web_config_schedule_forms.py`
+- [x] `tests/test_web_config_auth.py` — includes the actual regression test for the auth bug
+      (forged `logged_in=true` cookie and wrong-secret-signed session both correctly denied)
+
+### Explicitly deferred
+- [ ] Login rate-limiting/lockout — single-admin LAN app, low risk, conscious skip
 
 ## Phase 4 (not started)
 

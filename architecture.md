@@ -28,13 +28,13 @@ Technical breakdown of how the system is put together. Companion to [specificati
                      └─────────────────────────────────────────────┘
 ```
 
-`app/main.py` is a single long-running process, started and supervised by systemd. It's the entry point for one process that owns the render loop, all API calls, MQTT, and direct hardware access to the e-ink panel via `lib/waveshare_epd/epd7in5b_V2.py` — as of the v14 module split, `main.py` itself is thin orchestration only, importing config/fetching/rendering logic from sibling modules (§3). `app/web_config.py` is a separate, optional Flask process — it only reads/writes the `.env` file and can trigger a restart of the main service; it holds no runtime state of its own and does not talk to the display directly.
+`app/main.py` is a single long-running process, started and supervised by systemd. It's the entry point for one process that owns the render loop, all API calls, MQTT, and direct hardware access to the e-ink panel via `lib/waveshare_epd/epd7in5b_V2.py` — as of the v14 module split, `main.py` itself is thin orchestration only, importing config/fetching/rendering logic from sibling modules (§3). `app/web_config.py` is a separate Flask process, now with its own systemd unit (`systemd/web_config.service`) — it reads/writes `.env` and `schedule_config.json`, and can trigger a real restart of the main service via `/api/restart`; it holds no runtime state of its own and does not talk to the display directly.
 
 ## 2. Process & Deployment Topology
 
 - **Runtime**: single Python 3 process per service, no containers, no supervisor besides systemd.
 - **`bus_display.service`** (deployed to `/etc/systemd/system/`): runs `app/main.py` as user `seanj`, group `gpio`, with `SupplementaryGroups=gpio spi i2c` for hardware access. `Restart=on-failure`, `RestartSec=10` — this is the app's *only* self-healing mechanism (see [design.md](design.md) §Watchdog).
-- **`web_config.py`** is not managed by the shipped systemd unit — it must be run manually or added as a second unit if the web config panel is wanted persistently (noted in `CLAUDE.md`).
+- **`web_config.py`** has its own systemd unit, `systemd/web_config.service`, deployed the same way as `bus_display.service` (manual copy to `/etc/systemd/system/`, per `CLAUDE.md`). Its `/api/restart` endpoint needs a one-time sudoers entry (`systemd/bus_display_restart.sudoers.example`) to restart `bus_display` without a password.
 - **Dependencies**: Python packages via `pip` (`requirements.txt`); `pigpio`/`pigpiod` installed via `apt` (not pip-installable on Pi in a usable form) and must be running (`bus_display.service` has `Wants=pigpiod.service`, `After=pigpiod.service`).
 - **Fonts**: loaded at runtime from `pic/` (Atkinson Hyperlegible Next `.otf`, Material Design Icons `.ttf`) via absolute paths resolved from the script's own directory.
 - **Driver**: `lib/waveshare_epd/epd7in5b_V2.py` is the only driver in `lib/waveshare_epd/` actually used; the directory ships drivers for other Waveshare models purely for reference. `.so` compiled binaries are gitignored (ARM-only, installed via apt on-device).
@@ -60,12 +60,19 @@ Technical breakdown of how the system is put together. Companion to [specificati
 | `app/render/daytime_screen.py` | `display_daytime_screen()` — currently a placeholder ("Day time screen" centered), real content deferred (see `todo.md`); beats `ha_screen` on overlap and is the safe fallback when no window matches at all. |
 | `app/render/boot_screen.py` | `display_boot_checklist()` — runs `boot_checks.run_all_checks()` and renders all results in a single draw+display() pass, replacing the old static "System Starting..." text. |
 | `app/render/debug_screen.py` | `display_debug_screen()` — dev-only env-var dump shown at boot when `DEBUG_SKIP_TIME_CHECK=true`. |
-| `app/web_config.py` | Standalone Flask app to edit `.env` from a browser (`CONFIG_SCHEMA` dict drives an auto-generated form; reads `SystemHealth`-shaped status conceptually but does not share process memory with `main.py`). Untouched by Phases 1-2 — its Schedule Settings section still references the legacy `WAKE_HOUR`/`SLEEP_HOUR`/`HOME_ASSISTANT_SLEEP_URL` vars until its Phase 3 rewrite. |
+| `app/web_config.py` | Standalone Flask app: routes only. Real signed `session`-based auth (`login_required` decorator, CSRF-protected state-changing POSTs), `validate_web_config()` startup guard (refuses to run with a placeholder secret key or unset password hash), `/schedule`+`/save_schedule` (edits `schedule_config.json`, surfaces `scheduler.detect_overlaps()` warnings), `/api/restart` (restarts `bus_display` via `systemctl`), `/api/refresh` (existing MQTT data-refresh trigger). Does not share process memory with `main.py`. |
+| `app/web_config_schema.py` | `CONFIG_SCHEMA` — pure data, drives the `.env`-editing form. |
+| `app/web_config_env.py` | Pure `.env` read/build-updates/atomic-write logic — no Flask, testable with plain dicts. |
+| `app/web_config_schedule_forms.py` | Pure form-data ↔ schedule dict conversion + atomic JSON writer; delegates all validation to `scheduler.py`. |
+| `app/secrets_vault.py` | Fernet encrypt/decrypt for password-type `.env` values, `enc:`-prefixed storage, key-file management (`app/.encryption_key`, gitignored). |
+| `app/templates/`, `app/static/` | Jinja templates and CSS/JS for the web config panel, replacing the old inline `HTML_TEMPLATE` string. |
 | `lib/waveshare_epd/` | Vendored Waveshare display drivers; only `epd7in5b_V2.py` + `epdconfig.py` are live. |
 | `pic/` | Fonts loaded by PIL at runtime. |
 | `systemd/bus_display.service` | Deployed unit file for the main process — `ExecStart` still points at `app/main.py`, unaffected by the module split since the entry point's path didn't change. |
+| `systemd/web_config.service` | Deployed unit file for the web config panel — same conventions as `bus_display.service`. |
+| `systemd/bus_display_restart.sudoers.example` | Documents (not auto-installs) the one-time passwordless-sudo entry `/api/restart` needs. |
 | `tools/layout_editor.html` | Standalone HTML/JS tool (no build step) for visually mocking up and exporting the on-screen layout — not deployed to the Pi, dev-only. Still references the pre-rename `sleep_screen`/`display_sleep_screen()` naming (see `todo.md`). |
-| `tests/` | Stdlib `unittest` tests for the pure-logic modules (`scheduler.py`, `day_type.py`, `boot_checks.py`'s formatting function) — run via `python -m unittest discover -s tests`. |
+| `tests/` | Stdlib `unittest` tests: pure-logic modules (`scheduler.py`, `day_type.py`, `boot_checks.py`'s formatting function, `secrets_vault.py`, `web_config_env.py`, `web_config_schedule_forms.py`) plus Flask `test_client()`-based auth/session/CSRF tests for `web_config.py` — run via `python -m unittest discover -s tests`. |
 
 ## 4. Runtime Components
 
@@ -165,7 +172,7 @@ sleep(WAKE_INTERVAL) → loop
 | Home Assistant (day-type sensors) | Pi → HA | HTTPS REST, bearer token | Reads `binary_sensor.school_day`/`binary_sensor.workday_sensor`; only once per calendar day (`day_type.DayTypeCache`), not every loop iteration |
 | Home Assistant (ha_screen dashboard) | Pi → HA (Puppeteer add-on) | HTTPS, query-param config | Returns a rendered image, not JSON; converted to grayscale and pushed straight to the black buffer. Only fetched on entry into `ha_screen` or a manual refresh — not polled every loop iteration |
 | MQTT broker | Pi ↔ broker | MQTT (paho), optional auth | Bidirectional: subscribes for refresh commands, publishes status |
-| Web config panel | Browser → Pi | HTTP, Flask session auth | Local-network only by default; edits `.env` directly on disk |
+| Web config panel | Browser → Pi | HTTP, signed Flask `session` auth + CSRF | Local-network only, no TLS; edits `.env` and `schedule_config.json` directly on disk; can trigger a real `bus_display` restart via `sudo systemctl` (requires a one-time sudoers entry) |
 
 ## 7. Hardware Interface
 

@@ -25,7 +25,9 @@ A Raspberry Pi Zero W drives a Waveshare 7.5" black/white/red e-ink display moun
 | Screen override (testing) | Forces one of the four screens regardless of schedule/day-type, for verifying a screen renders correctly on real hardware without waiting for its window/day-type to occur naturally. Not meant to be left set in production | `FORCE_SCREEN` |
 | MQTT remote refresh | Home Assistant (or anything else) can publish to a topic to force an immediate manual refresh, including waking the display early | `MQTT_ENABLED`, `MQTT_TOPIC_REFRESH` |
 | MQTT status publishing | Publishes lifecycle status (`online`/`sleeping`/`awake`/`refreshing`/`idle`/`offline`) to a retained topic for HA to consume | `MQTT_TOPIC_STATUS` |
-| Web config panel | Optional Flask app (`app/web_config.py`, not run by the main systemd service) to edit `.env` from a browser without SSH | `WEB_CONFIG_*` |
+| Web config panel | Flask app (`app/web_config.py`, own systemd unit) to edit `.env` and the four-screen schedule from a browser without SSH. Real signed-session auth + CSRF protection; can trigger a genuine `bus_display` restart | `WEB_CONFIG_*`, `SECRETS_KEY_PATH` |
+| Web config: schedule editing | `/schedule` page edits `schedule_config.json`'s four screen windows directly, surfacing `scheduler.detect_overlaps()` conflict warnings in the UI | schedule entry in `schedule_config.json` |
+| Secrets at rest | Password-type `.env` fields are encrypted (`enc:` prefix) when saved through the web UI; `config.py` decrypts transparently on read. Protects a leaked/shared/committed `.env` in isolation, not a compromised device | `SECRETS_KEY_PATH` |
 | Debug screen | Full-screen dump of all resolved config values for troubleshooting, shown at boot for 5s | `DEBUG_SKIP_TIME_CHECK=true` |
 
 ## 3. Functional Requirements
@@ -77,7 +79,8 @@ Full list of environment variables — see `.env.example` as the source of truth
 | Home Assistant — weather | `HOME_ASSISTANT_API_URL`, `HOME_ASSISTANT_TOKEN`, `HOME_ASSISTANT_WEATHER_ENTITY`, `WEATHER_CACHE_DURATION` |
 | Home Assistant — ha_screen | `HOME_ASSISTANT_DASHBOARD_URL` (falls back to legacy `HOME_ASSISTANT_SLEEP_URL`), `SLEEP_SCREEN_DASHBOARD`, `SLEEP_SCREEN_EINK_MODE`, `SLEEP_SCREEN_ZOOM`, `SLEEP_SCREEN_FORMAT`, `SLEEP_SCREEN_WAIT`, `SLEEP_SCREEN_THEME` |
 | MQTT | `MQTT_ENABLED`, `MQTT_BROKER`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_TOPIC_REFRESH`, `MQTT_TOPIC_STATUS` |
-| Web config panel | `WEB_CONFIG_PORT`, `WEB_CONFIG_HOST`, `WEB_CONFIG_USERNAME`, `WEB_CONFIG_PASSWORD_HASH`, `WEB_CONFIG_SECRET_KEY` |
+| Web config panel | `WEB_CONFIG_PORT`, `WEB_CONFIG_HOST`, `WEB_CONFIG_USERNAME`, `WEB_CONFIG_PASSWORD_HASH`, `WEB_CONFIG_SECRET_KEY` (both of the latter two required — no insecure fallback) |
+| Secrets at rest | `SECRETS_KEY_PATH` |
 | Caching | `CACHE_DURATION` |
 | Logging | `LOG_LEVEL` |
 
@@ -94,8 +97,10 @@ From `README.md`'s roadmap, still open:
 Added by Phase 2's design but explicitly deferred (see `todo.md` for the full list):
 - `daytime_screen` is currently a placeholder — no real content yet.
 - `work_day` and `off_day` are both treated identically (fall back to `daytime_screen`) — no distinct content for each yet.
-- Schedule-conflict warnings are only logged, not surfaced in any UI — needs the Phase 3 `web_config.py` rewrite.
 - Each screen supports exactly one daily window — no multi-period-per-day schedules yet.
+
+Added by Phase 3's design but explicitly deferred (see `todo.md`):
+- Login rate-limiting/lockout on the web config panel — single-admin LAN app, low risk, conscious skip.
 
 ## 7. Related Documents
 

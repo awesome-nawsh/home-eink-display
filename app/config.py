@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 
 from scheduler import SCREEN_NAMES  # FORCE_SCREEN validation below; scheduler.py has
                                      # no imports of its own, so this can't create a cycle.
+from secrets_vault import get_or_create_key, decrypt_value
 
 # Load environment variables first
 load_dotenv()
@@ -31,6 +32,15 @@ logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+
+# Secrets-at-rest encryption key. Protects .env values viewed/shared/committed
+# in isolation — NOT a defense against full filesystem access to this device,
+# since the key must live on the same disk to be usable at process start.
+SECRETS_KEY_PATH = os.getenv(
+    'SECRETS_KEY_PATH',
+    os.path.join(os.path.dirname(os.path.realpath(__file__)), '.encryption_key')
+)
+_secrets_key = get_or_create_key(SECRETS_KEY_PATH)
 
 # ============================================================================
 # CONSTANTS
@@ -118,7 +128,7 @@ HTTP_TIMEOUT_LONG = 15
 WATCHDOG_TIMEOUT = 300
 
 # Environment variables with defaults
-API_KEY = os.getenv('API_KEY')
+API_KEY = decrypt_value(os.getenv('API_KEY'), _secrets_key)
 BUS_API_URL = os.getenv('API_BUS_URL', 'Not Found - bus API url')
 TRAIN_API_URL = os.getenv('API_TRAIN_URL', 'Not Found - train API url')
 API_BUS_STOP_INFO_URL = os.getenv('API_BUS_STOP_INFO_URL', 'Not Found - bus stop API url')
@@ -133,8 +143,8 @@ JOURNEY_DESTINATION_SHORT = os.getenv('JOURNEY_DESTINATION_SHORT')  # Short name
 
 # Routing API Configuration
 ROUTING_API_PROVIDER = os.getenv('ROUTING_API_PROVIDER', 'onemap').lower()  # 'onemap' or 'google'
-GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')  # Required if using Google
-ONEMAP_API_KEY = os.getenv('ONEMAP_API_KEY')  # Optional for OneMap
+GOOGLE_MAPS_API_KEY = decrypt_value(os.getenv('GOOGLE_MAPS_API_KEY'), _secrets_key)  # Required if using Google
+ONEMAP_API_KEY = decrypt_value(os.getenv('ONEMAP_API_KEY'), _secrets_key)  # Optional for OneMap
 
 # Journey time cache (longer duration since routes don't change often)
 JOURNEY_TIME_CACHE_DURATION = int(os.getenv('JOURNEY_TIME_CACHE_DURATION', '1800'))  # 30 minutes default
@@ -178,7 +188,7 @@ INTERNET_CHECK_URL = os.getenv('INTERNET_CHECK_URL', 'https://www.google.com/gen
 
 # Home Assistant Configuration
 HOME_ASSISTANT_API_URL = os.getenv('HOME_ASSISTANT_API_URL')
-HOME_ASSISTANT_TOKEN = os.getenv('HOME_ASSISTANT_TOKEN')
+HOME_ASSISTANT_TOKEN = decrypt_value(os.getenv('HOME_ASSISTANT_TOKEN'), _secrets_key)
 HOME_ASSISTANT_WEATHER_ENTITY = os.getenv('HOME_ASSISTANT_WEATHER_ENTITY', 'weather.home')
 # HOME_ASSISTANT_DASHBOARD_URL is the ha_screen image source (renamed from
 # "sleep screen" now that it's shown per its own schedule entry, not tied to
@@ -197,7 +207,7 @@ MQTT_ENABLED = os.getenv('MQTT_ENABLED', 'false').lower() == 'true'
 MQTT_BROKER = os.getenv('MQTT_BROKER', 'localhost')
 MQTT_PORT = int(os.getenv('MQTT_PORT', '1883'))
 MQTT_USERNAME = os.getenv('MQTT_USERNAME', '')
-MQTT_PASSWORD = os.getenv('MQTT_PASSWORD', '')
+MQTT_PASSWORD = decrypt_value(os.getenv('MQTT_PASSWORD', ''), _secrets_key)
 MQTT_TOPIC_REFRESH = os.getenv('MQTT_TOPIC_REFRESH', 'eink/display/refresh')
 MQTT_TOPIC_STATUS = os.getenv('MQTT_TOPIC_STATUS', 'eink/display/status')
 

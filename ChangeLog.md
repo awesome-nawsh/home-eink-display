@@ -2,6 +2,21 @@
 
 ## [V14] - Rewrite in progress (branch `v14-rewrite`)
 
+### Phase 3 — `web_config.py` rewrite: session auth, scheduler UI, `/api/restart`, secrets at rest
+
+Fixes a real auth bypass and closes out the last major file from before this rewrite. See `todo.md` for the full checklist.
+
+- **Auth bypass fixed**: the previous "auth" was a bare unsigned cookie (`logged_in=true`) any client could forge to skip login entirely. Replaced with a real signed Flask `session` (itsdangerous, keyed by `app.secret_key`) — a tampered/forged cookie now fails signature verification. `WEB_CONFIG_SECRET_KEY`/`WEB_CONFIG_PASSWORD_HASH` no longer have insecure fallbacks; `web_config.py` refuses to start (`validate_web_config()`) if either is unset or a known placeholder.
+- Minimal hand-rolled CSRF protection (session-stored token, checked on `/login`, `/save`, `/save_schedule`, `/api/restart`, `/api/refresh`) — no new dependency.
+- **New `/schedule` + `/save_schedule`** — edits `schedule_config.json`'s four screen windows directly (`<input type="time">`), reusing `scheduler.validate_schedule()`/`detect_overlaps()` (never reimplemented). Surfaces schedule-conflict warnings in the UI — closes that `todo.md` item. Writes atomically (temp file + `os.replace()`).
+- **New `/api/restart`** — actually restarts `bus_display` via `systemctl` (the old `/api/refresh` only ever triggered an MQTT data refresh, never a real restart despite the UI implying one). Requires a one-time sudoers entry — see `systemd/bus_display_restart.sudoers.example`, not auto-installed.
+- **Secrets encryption at rest** (`app/secrets_vault.py`, new `cryptography` dependency): password-type `.env` fields (`API_KEY`, `GOOGLE_MAPS_API_KEY`, `ONEMAP_API_KEY`, `HOME_ASSISTANT_TOKEN`, `MQTT_PASSWORD`) are encrypted (`enc:` prefix) when saved through the web UI, decrypted transparently by `config.py` on read. Protects a leaked/shared/committed `.env` file in isolation — not a defense against full filesystem access to the device, since the key file (`app/.encryption_key`, gitignored) lives on the same disk. Existing plaintext values keep working untouched until re-saved once.
+- `CONFIG_SCHEMA` updated for Phase 2: fixed stale `http://` API URL defaults, renamed `HOME_ASSISTANT_SLEEP_URL` field to `HOME_ASSISTANT_DASHBOARD_URL`, added a "Day-Type & Scheduler" category (including `FORCE_SCREEN` as a dropdown for quick testing), relabeled legacy `WAKE_HOUR`/`SLEEP_HOUR`/etc. as fallback-only.
+- Rewrote as multiple small modules (`web_config_schema.py`, `web_config_env.py`, `web_config_schedule_forms.py`, `secrets_vault.py`) plus real Jinja templates (`app/templates/`) and static assets (`app/static/`), replacing the single inline-HTML-string file.
+- New `systemd/web_config.service` — the panel now has its own persistent systemd unit instead of "run it separately."
+- 39 new tests (`test_secrets_vault.py`, `test_web_config_env.py`, `test_web_config_schedule_forms.py`, `test_web_config_auth.py`) — the last of these includes the actual regression test for the fixed auth bug (a forged `logged_in=true` cookie, and a session cookie signed with the wrong secret, both correctly denied).
+- Explicitly deferred: login rate-limiting/lockout (single-admin LAN app, low risk — conscious skip, see `todo.md`).
+
 ### Phase 2 — Four-screen scheduler, day-type gating, boot connectivity checklist
 
 Replaces the single fixed `WAKE_HOUR`/`SLEEP_HOUR` pair and static "System Starting..." boot message. See `todo.md` for the full checklist and explicitly deferred items.
