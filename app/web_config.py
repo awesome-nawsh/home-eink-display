@@ -9,6 +9,7 @@ verification and is treated as an empty (logged-out) session. See
 validate_web_config() for the startup guard that refuses to run with a
 placeholder secret key or default password.
 """
+import logging
 import os
 import secrets
 import subprocess
@@ -180,6 +181,32 @@ def logout():
     return redirect(url_for('index'))
 
 
+def publish_config_reload():
+    """Best-effort MQTT ping telling the running bus_display process to
+    reload its dynamic config (schedule + FORCE_SCREEN) immediately, rather
+    than waiting for its mtime-poll backstop. Never raises — a failed
+    publish just means that backstop picks the change up a bit later instead."""
+    try:
+        mqtt_broker = os.getenv('MQTT_BROKER', 'localhost')
+        mqtt_port = int(os.getenv('MQTT_PORT', '1883'))
+        mqtt_topic = os.getenv('MQTT_TOPIC_CONFIG_RELOAD', 'eink/display/config_reload')
+
+        auth = None
+        if os.getenv('MQTT_USERNAME') and os.getenv('MQTT_PASSWORD'):
+            auth = {'username': os.getenv('MQTT_USERNAME'), 'password': os.getenv('MQTT_PASSWORD')}
+
+        mqtt_publish.single(mqtt_topic, 'reload', hostname=mqtt_broker, port=mqtt_port, auth=auth)
+    except Exception as e:
+        logging.warning(f"Could not publish config_reload via MQTT: {e}")
+
+
+# Fields that main.py can pick up live, without a restart — see
+# config.DYNAMIC_CONFIG_VARS. Kept here as a literal (rather than importing
+# config.py, which this standalone process otherwise avoids) since it's
+# purely a UI/messaging concern, not shared runtime state.
+DYNAMIC_ENV_FIELDS = {'FORCE_SCREEN'}
+
+
 @app.route('/save', methods=['POST'])
 @login_required
 def save_config():
@@ -189,7 +216,13 @@ def save_config():
     to_set, to_unset = build_env_updates(request.form, CONFIG_SCHEMA, encrypt_fn)
     try:
         atomic_write_env_file(ENV_FILE, to_set, to_unset)
-        flash('Configuration saved. Restart the service to apply changes.', 'success')
+        changed_fields = set(to_set) | set(to_unset)
+        if changed_fields & DYNAMIC_ENV_FIELDS:
+            publish_config_reload()
+        if changed_fields <= DYNAMIC_ENV_FIELDS and changed_fields:
+            flash('Configuration saved — applies automatically within moments (no restart needed).', 'success')
+        else:
+            flash('Configuration saved. Restart the service to apply changes.', 'success')
     except OSError as e:
         flash(f'Error saving configuration: {e}', 'error')
 
@@ -220,9 +253,11 @@ def save_schedule():
         flash(f'Error saving schedule: {e}', 'error')
         return redirect(url_for('schedule_page'))
 
+    publish_config_reload()
+
     for w in detect_overlaps(candidate):
         flash(w, 'info')
-    flash('Schedule saved. Restart the service to apply changes.', 'success')
+    flash('Schedule saved — applies automatically within moments (no restart needed).', 'success')
     return redirect(url_for('schedule_page'))
 
 

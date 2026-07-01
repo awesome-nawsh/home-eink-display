@@ -116,7 +116,7 @@ sudo systemctl enable --now web_config
 
 Visit `http://<pi-ip>:5000` and log in with `WEB_CONFIG_USERNAME` (default `admin`) and the password you hashed in step 4.
 
-To let the panel's "Restart Service" button actually restart `bus_display` (needed for `.env`/schedule changes to take effect — config is only loaded once at process start), it needs a one-time passwordless-sudo entry:
+To let the panel's "Restart Service" button actually restart `bus_display` (needed for most `.env` changes to take effect — config is only loaded once at process start; the schedule and `FORCE_SCREEN` are the exception, see below), it needs a one-time passwordless-sudo entry:
 
 ```bash
 sudo cp systemd/bus_display_restart.sudoers.example /etc/sudoers.d/bus_display_restart
@@ -127,7 +127,7 @@ sudo visudo -c   # validates the syntax
 ## 8. Verify it's actually working
 
 - `journalctl -u bus_display -f` — confirm clean startup, no import errors, real API calls succeeding (not 404s).
-- Set `FORCE_SCREEN=<screen_name>` in `.env` (one of `sleep_screen`, `bus_train_screen`, `daytime_screen`, `ha_screen`) and restart the service to force any screen on demand, without waiting for its schedule window — clear it (`FORCE_SCREEN=`) and restart again once you're done testing.
+- Set `FORCE_SCREEN=<screen_name>` in `.env` (one of `sleep_screen`, `bus_train_screen`, `daytime_screen`, `ha_screen`) to force any screen on demand, without waiting for its schedule window. Since Phase 4, this and the schedule (`schedule_config.json`) apply live within moments — no restart needed — whether you edit them via the web UI (which pings the running service automatically) or directly in the files over SSH (picked up by a background file-change check). Clear it (`FORCE_SCREEN=`) once you're done testing. Everything else in `.env` still needs a restart.
 - If you want to preview layout changes without touching the Pi at all, `python3 tools/preview_render.py --screen <combined|debug|daytime|sleep|boot>` renders any of the local screens to a PNG on your own machine (needs `Pillow`/`python-dotenv` installed locally) — it can't preview `ha_screen`, since that one fetches a live HA dashboard screenshot.
 
 ---

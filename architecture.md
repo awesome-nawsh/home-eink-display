@@ -46,13 +46,14 @@ Technical breakdown of how the system is put together. Companion to [specificati
 | Path | Role |
 |---|---|
 | `app/main.py` | Entry point / orchestration only: startup validation, hardware init, the boot screen, and the main scheduler/fetch/render loop. Imports everything else. |
-| `app/config.py` | All environment variable loading and layout constants (`SCREEN_WIDTH`/`SCREEN_HEIGHT`/`COLUMN_OFFSET` and everything derived from them), `validate_configuration()`, the `refresh_requested` event, `boot_timestamp`. Every other module imports from here — the single source of truth for configuration. |
+| `app/config.py` | All environment variable loading and layout constants (`SCREEN_WIDTH`/`SCREEN_HEIGHT`/`COLUMN_OFFSET` and everything derived from them), `validate_configuration()`, the `refresh_requested` event, `boot_timestamp`. Every other module imports from here — the single source of truth for configuration. `DYNAMIC_CONFIG_VARS` + `reload_dynamic_vars()` + `config_reload_requested` support Phase 4's narrow no-restart reload (currently just `FORCE_SCREEN` — see §5). |
 | `app/health.py` | `Watchdog` (stuck-loop detection) and `SystemHealth` (API-call/display-update counters, periodic stats logging), plus their module-level singleton instances. |
 | `app/fetchers.py` | The shared `http_session` (retrying `requests.Session`), `DataCache`, `BackoffManager`, and every data-fetch function: `get_bus_arrival`, `get_train_disruptions`, `get_weather_from_homeassistant`, `get_bus_stop_coordinates`, `get_day_type_sensors`, the OneMap/Google journey-time calculators, and `fetch_data_parallel()`. |
 | `app/mqtt_client.py` | `MQTTClient` only — instantiated inside `main()`, not a module-level singleton (matches pre-split behavior). |
 | `app/scheduler.py` | Pure schedule logic for the four-screen model: `load_schedule_config()` (the only file-I/O boundary, reads `schedule_config.json`), `validate_schedule()`, `default_schedule_from_env()` (migration fallback from `WAKE_HOUR`/`SLEEP_HOUR`), `detect_overlaps()`, `get_next_wake_time()`, `resolve_active_screen()` (fixed precedence: `sleep_screen` > `bus_train_screen` > `daytime_screen` > `ha_screen`). |
 | `app/day_type.py` | Pure day-type resolution: `resolve_day_type()`, `DayTypeCache` (date-keyed, resolves once per calendar day), `resolve_todays_day_type()`. |
 | `app/boot_checks.py` | Boot-time connectivity probes (`check_network`, `check_internet`, `check_lta_api`, `check_home_assistant`), `run_all_checks()`, and the pure `format_checklist_lines()`. |
+| `app/reload_watch.py` | Pure file-change detection (`get_mtime()`, `has_changed()`) — `main.py`'s mtime-poll backstop for the dynamic-reload feature (§5, §15 of design.md). |
 | `app/render/common.py` | Shared rendering primitives: `MDI` icon glyph table, font loaders (`get_font`/`get_font_bold`/`get_icon_font`), `DisplayManager`, `draw_mdi_icon`, `get_weather_icon`. |
 | `app/render/bus_train.py` | The `bus_train_screen`: `draw_bus_section`, `draw_train_section`, `draw_weather_section_right`, `draw_timestamp`, `display_combined_view`. |
 | `app/render/sleep_screen.py` | `display_sleep_screen()` — the true overnight screen: minimal, locally-PIL-drawn (`MDI.WEATHER_NIGHT` icon + "Next wake: HH:MM", no network fetch). Highest precedence of the four screens — the "ultimate override," never gated by day-type. This is a *new* Phase 2 file — not the same file as the pre-Phase-2 `sleep_screen.py`, which was renamed to `ha_screen.py` (below) before this file was (re)created. |
@@ -88,6 +89,7 @@ Instantiated once at import time and shared across the whole process (each still
 | `cache` | `DataCache` | `fetchers.py` | In-memory TTL cache for bus/train/weather/journey-time responses (process-lifetime only, no persistence) |
 | `mqtt_client` | `MQTTClient` | `main.py` (class defined in `mqtt_client.py`) | Created inside `main()`; wraps paho-mqtt, runs its network loop on a background daemon thread |
 | `refresh_requested` | `threading.Event` | `config.py` | Cross-thread signal: MQTT callback thread → main loop thread |
+| `config_reload_requested` | `threading.Event` | `config.py` | Cross-thread signal (Phase 4): MQTT callback thread → main loop thread, triggers `reload_dynamic_vars()` and/or a schedule reload |
 | `day_type_cache` | `DayTypeCache` | `day_type.py` | Date-keyed (not TTL) cache — resolves `school_day`/`work_day`/`off_day` once per calendar day, not on every loop iteration |
 
 ### 4.2 Data-fetch layer
@@ -113,6 +115,7 @@ Instantiated once at import time and shared across the whole process (each still
 ### 4.5 MQTT integration
 - `MQTTClient` wraps paho-mqtt. On construction (only if `MQTT_ENABLED`), connects and starts `client.loop_start()` on a background thread so MQTT never blocks the render loop.
 - Subscribes to `MQTT_TOPIC_REFRESH`; a matching payload sets `refresh_requested`, consumed by the main loop on its next iteration.
+- Subscribes to `MQTT_TOPIC_CONFIG_RELOAD` (Phase 4); any message sets `config_reload_requested`, triggering `config.reload_dynamic_vars()` and/or a schedule reload on the main loop's next iteration. `web_config.py` publishes to this topic automatically after a successful schedule save.
 - Publishes to `MQTT_TOPIC_STATUS` (retained) at each lifecycle transition: `online` → `sleeping`/`awake` → `refreshing` → `idle` → `offline`.
 
 ## 5. Data Flow — One Loop Iteration
@@ -122,6 +125,11 @@ watchdog.feed()
    │
    ▼
 check refresh_requested (MQTT) ──► if set: cache.clear(), manual_refresh=True, wake panel if asleep
+   │
+   ▼
+dynamic config reload check (Phase 4 — narrow allowlist, config.DYNAMIC_CONFIG_VARS):
+   config_reload_requested (MQTT) OR .env/schedule_config.json mtime changed
+   ──► config.reload_dynamic_vars() (refreshes FORCE_SCREEN) and/or reload the schedule
    │
    ▼
 resolve_todays_day_type() (cheap — only hits HA on calendar-date rollover)

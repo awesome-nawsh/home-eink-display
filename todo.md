@@ -122,7 +122,20 @@ Code plan file) for the full design rationale behind each phase.
 - [ ] Move the LTA API URLs (`API_BUS_URL`, `API_TRAIN_URL`, `API_BUS_STOP_INFO_URL`) into an
       "Advanced" section — these only need changing if LTA changes their API, not day-to-day config
 
-## Phase 4 (not started)
+## Phase 4 — Dynamic (no-restart) config reload for the schedule and `FORCE_SCREEN`
 
-- [ ] Dynamic (no-restart) config reload: `Config.reload()`, restart-required vs. dynamic
-      classification per variable, MQTT `config_reload` topic + mtime-poll backstop
+- [x] `app/reload_watch.py`: pure `get_mtime()`/`has_changed()` file-change detection
+- [x] `config.py`: `DYNAMIC_CONFIG_VARS`, `reload_dynamic_vars()`, `config_reload_requested`,
+      `MQTT_TOPIC_CONFIG_RELOAD`, explicit `ENV_FILE_PATH` constant
+- [x] `mqtt_client.py`: subscribes to `MQTT_TOPIC_CONFIG_RELOAD`
+- [x] `main.py`: mtime-poll + MQTT-triggered reload dispatch each loop tick; `config.FORCE_SCREEN`
+      read via dotted access (not a bare imported name) so it sees live updates
+- [x] `web_config.py`: auto-publishes `config_reload` after a schedule save or a `FORCE_SCREEN`-only
+      settings save; differentiated flash messages
+- [x] `web_config_schema.py`/`_field_macros.html`: `FORCE_SCREEN` marked `dynamic`, "applies live" badge
+- [x] `tests/test_reload_watch.py`, `tests/test_config_force_screen.py`
+
+### Explicitly deferred
+- [ ] Expanding `DYNAMIC_CONFIG_VARS` beyond `FORCE_SCREEN`/the schedule — would need more read
+      sites converted to dotted `config.SOMEVAR` lookups; only worth it for a specific variable
+      someone actually wants to change without a restart

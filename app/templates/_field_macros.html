@@ -3,6 +3,9 @@
     <label for="{{ field_name }}">
         {{ field_config.label }}
         {% if field_config.required %}<span class="required">*</span>{% endif %}
+        {% if field_config.get('dynamic') %}
+            <span class="badge badge-dynamic" title="Applies within moments, no restart needed">applies live</span>
+        {% endif %}
     </label>
 
     {% if field_config.type == 'password' %}
