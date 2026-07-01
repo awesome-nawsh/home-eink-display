@@ -537,6 +537,41 @@ def get_weather_from_homeassistant(force_refresh=False):
             return data
         return None
 
+def get_day_type_sensors():
+    """Fetch binary_sensor.school_day and binary_sensor.workday_sensor raw
+    states from Home Assistant. Fetch-only — day_type.py's resolve_day_type()
+    turns these into 'school_day'/'work_day'/'off_day'. Returns (None, None)
+    if HA isn't configured or unreachable; caller decides the fallback.
+
+    No caching here — day_type.DayTypeCache already resolves this once per
+    calendar day, so an extra TTL-based cache in fetchers.py would just add
+    a second layer of staleness for no benefit.
+    """
+    if not HOME_ASSISTANT_API_URL or not HOME_ASSISTANT_TOKEN:
+        logging.debug("Home Assistant API URL or token not configured - day-type resolution unavailable")
+        return None, None
+
+    headers = {
+        'Authorization': f'Bearer {HOME_ASSISTANT_TOKEN}',
+        'Content-Type': 'application/json'
+    }
+
+    def fetch_state(entity_id):
+        url = f"{HOME_ASSISTANT_API_URL}/api/states/{entity_id}"
+        response = http_session.get(url, headers=headers, timeout=HTTP_TIMEOUT_DEFAULT)
+        response.raise_for_status()
+        return response.json()['state']
+
+    try:
+        school_day_state = fetch_state(HOME_ASSISTANT_SCHOOL_DAY_ENTITY)
+        workday_state = fetch_state(HOME_ASSISTANT_WORKDAY_ENTITY)
+        system_health.record_api_call('day_type', success=True)
+        return school_day_state, workday_state
+    except requests.RequestException as e:
+        logging.error(f"Error fetching day-type sensors from Home Assistant: {e}")
+        system_health.record_api_call('day_type', success=False)
+        return None, None
+
 def fetch_data_parallel(force_refresh=False):
     """Fetch bus, train, weather data in parallel, then calculate journey times."""
     with ThreadPoolExecutor(max_workers=3) as executor:

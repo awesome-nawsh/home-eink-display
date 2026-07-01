@@ -2,6 +2,21 @@
 
 ## [V14] - Rewrite in progress (branch `v14-rewrite`)
 
+### Phase 2 — Four-screen scheduler, day-type gating, boot connectivity checklist
+
+Replaces the single fixed `WAKE_HOUR`/`SLEEP_HOUR` pair and static "System Starting..." boot message. See `todo.md` for the full checklist and explicitly deferred items.
+
+- `app/scheduler.py` — pure schedule logic (`load_schedule_config`, `validate_schedule`, `default_schedule_from_env`, `detect_overlaps`, `get_next_wake_time`, `resolve_active_screen`) driving four independently-scheduled screens defined in a new `schedule_config.json` (see `schedule_config.json.example`). Fixed precedence: `sleep_screen` > `bus_train_screen` > `daytime_screen` > `ha_screen`; overlaps are logged, not errors. Falls back to a schedule derived from the legacy `WAKE_HOUR`/`SLEEP_HOUR` if `schedule_config.json` is absent/invalid.
+- `app/render/sleep_screen.py` (new) — the true overnight screen: minimal, locally-PIL-drawn (`MDI.WEATHER_NIGHT` icon + "Next wake: HH:MM"), no network fetch. Highest precedence of all four screens — the "ultimate override," never gated by day-type. While active, the main loop skips `fetch_data_parallel()` entirely, same as `ha_screen`.
+- `app/day_type.py` + `fetchers.get_day_type_sensors()` — resolves `school_day`/`work_day`/`off_day` once per calendar day from `binary_sensor.school_day`/`binary_sensor.workday_sensor`, with a fallback if Home Assistant is unreachable. `bus_train_screen` is only eligible on `school_day`.
+- `app/render/sleep_screen.py` (original) → renamed to `app/render/ha_screen.py` (`display_sleep_screen` → `display_ha_screen`) — same HA-dashboard-screenshot behavior, now driven by its own schedule entry. Moved to **lowest** precedence of the four — only shows in a genuine gap the other three don't claim. While `ha_screen` is active, the main loop skips `fetch_data_parallel()` entirely (no LTA/weather polling).
+- `app/render/daytime_screen.py` (new) — placeholder screen ("Day time screen" centered); real content deferred.
+- `app/boot_checks.py` + `app/render/boot_screen.py` (new) — boot-time connectivity checklist (Network/Internet/LTA API/Home Assistant), all four checks run before a single render+display() call.
+- `config.py` — new vars: `HOME_ASSISTANT_SCHOOL_DAY_ENTITY`, `HOME_ASSISTANT_WORKDAY_ENTITY`, `DAY_TYPE_FALLBACK`, `SCHEDULE_CONFIG_PATH`, `BOOT_CHECK_TIMEOUT`, `INTERNET_CHECK_URL`, `HOME_ASSISTANT_DASHBOARD_URL` (falls back to legacy `HOME_ASSISTANT_SLEEP_URL`), `FORCE_SCREEN` (testing override — forces one screen regardless of schedule/day-type, invalid values logged and ignored). `WAKE_HOUR`/`SLEEP_HOUR` kept as the migration-fallback input to `default_schedule_from_env()`.
+- `tests/` (new) — stdlib `unittest` coverage for `scheduler.py`, `day_type.py`, and `boot_checks.py`'s pure formatting function. Run via `python -m unittest discover -s tests`.
+- `tools/preview_render.py` — added `--screen daytime`, `--screen sleep`, and `--screen boot` (fixed fake connectivity results, no network).
+- **Known gaps carried into Phase 3**: `app/web_config.py`'s Schedule Settings section still references the legacy `WAKE_HOUR`/`SLEEP_HOUR`/`HOME_ASSISTANT_SLEEP_URL` vars, and schedule-conflict warnings are only logged (not shown in any UI) — both need the Phase 3 `web_config.py` rewrite. `tools/layout_editor.html` still uses the pre-rename `sleep_screen` naming (now ambiguous with the new true sleep screen — needs updating to disambiguate).
+
 ### Phase 1 — Module split (pure refactor, no behavior change)
 
 `app/main.py` (~1600 lines, monolithic) is split into focused modules. Every function/class keeps its current name, signature, and logic — this phase changes only where code lives, not what it does.

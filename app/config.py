@@ -13,6 +13,9 @@ import logging
 from datetime import datetime
 from dotenv import load_dotenv
 
+from scheduler import SCREEN_NAMES  # FORCE_SCREEN validation below; scheduler.py has
+                                     # no imports of its own, so this can't create a cycle.
+
 # Load environment variables first
 load_dotenv()
 
@@ -136,17 +139,52 @@ ONEMAP_API_KEY = os.getenv('ONEMAP_API_KEY')  # Optional for OneMap
 # Journey time cache (longer duration since routes don't change often)
 JOURNEY_TIME_CACHE_DURATION = int(os.getenv('JOURNEY_TIME_CACHE_DURATION', '1800'))  # 30 minutes default
 
+# Legacy wake/sleep hours — no longer read directly by main.py's loop (see
+# scheduler.py), kept only as the migration-fallback input to
+# default_schedule_from_env() when schedule_config.json is absent.
 WAKE_HOUR = int(os.getenv('WAKE_HOUR', '7'))
 SLEEP_HOUR = int(os.getenv('SLEEP_HOUR', '22'))
 WAKE_INTERVAL = int(os.getenv('WAKE_INTERVAL', '30'))
 SLEEP_INTERVAL = int(os.getenv('SLEEP_INTERVAL', '300'))
 DEBUG_SKIP_TIME_CHECK = os.getenv('DEBUG_SKIP_TIME_CHECK', 'false').lower() == 'true'
 
+# Four-screen scheduler (schedule_config.json) and day-type resolution
+HOME_ASSISTANT_SCHOOL_DAY_ENTITY = os.getenv('HOME_ASSISTANT_SCHOOL_DAY_ENTITY', 'binary_sensor.school_day')
+HOME_ASSISTANT_WORKDAY_ENTITY = os.getenv('HOME_ASSISTANT_WORKDAY_ENTITY', 'binary_sensor.workday_sensor')
+DAY_TYPE_FALLBACK = os.getenv('DAY_TYPE_FALLBACK', 'work_day')
+SCHEDULE_CONFIG_PATH = os.getenv(
+    'SCHEDULE_CONFIG_PATH',
+    os.path.join(os.path.dirname(os.path.realpath(__file__)), 'schedule_config.json')
+)
+
+# Testing override: force a specific screen regardless of schedule/day-type
+# (one of scheduler.SCREEN_NAMES, or unset/empty for normal resolution).
+# Intended for verifying a screen renders correctly on real hardware without
+# waiting for its schedule window or day-type to naturally occur — not meant
+# to be left set in production.
+_force_screen_raw = os.getenv('FORCE_SCREEN', '').strip()
+if _force_screen_raw and _force_screen_raw not in SCREEN_NAMES:
+    logging.warning(
+        f"FORCE_SCREEN={_force_screen_raw!r} is not a valid screen name "
+        f"({', '.join(SCREEN_NAMES)}) - ignoring, using normal schedule resolution"
+    )
+    FORCE_SCREEN = None
+else:
+    FORCE_SCREEN = _force_screen_raw or None
+
+# Boot-screen connectivity checklist
+BOOT_CHECK_TIMEOUT = float(os.getenv('BOOT_CHECK_TIMEOUT', '3'))
+INTERNET_CHECK_URL = os.getenv('INTERNET_CHECK_URL', 'https://www.google.com/generate_204')
+
 # Home Assistant Configuration
 HOME_ASSISTANT_API_URL = os.getenv('HOME_ASSISTANT_API_URL')
 HOME_ASSISTANT_TOKEN = os.getenv('HOME_ASSISTANT_TOKEN')
 HOME_ASSISTANT_WEATHER_ENTITY = os.getenv('HOME_ASSISTANT_WEATHER_ENTITY', 'weather.home')
-HOME_ASSISTANT_SLEEP_URL = os.getenv('HOME_ASSISTANT_SLEEP_URL')
+# HOME_ASSISTANT_DASHBOARD_URL is the ha_screen image source (renamed from
+# "sleep screen" now that it's shown per its own schedule entry, not tied to
+# WAKE_HOUR/SLEEP_HOUR). HOME_ASSISTANT_SLEEP_URL is read as a fallback so
+# existing .env files deployed before this rename keep working.
+HOME_ASSISTANT_DASHBOARD_URL = os.getenv('HOME_ASSISTANT_DASHBOARD_URL') or os.getenv('HOME_ASSISTANT_SLEEP_URL')
 SLEEP_SCREEN_DASHBOARD = os.getenv('SLEEP_SCREEN_DASHBOARD')
 SLEEP_SCREEN_EINK_MODE = os.getenv('SLEEP_SCREEN_EINK_MODE', '2')
 SLEEP_SCREEN_ZOOM = os.getenv('SLEEP_SCREEN_ZOOM', '1')
@@ -211,8 +249,18 @@ def validate_configuration():
         warnings.append("HOME_ASSISTANT_TOKEN not set - weather disabled")
     if MQTT_ENABLED and not MQTT_BROKER:
         warnings.append("MQTT enabled but MQTT_BROKER not set")
-    if not HOME_ASSISTANT_SLEEP_URL:
-        warnings.append("HOME_ASSISTANT_SLEEP_URL not set - sleep screen disabled")
+    if not HOME_ASSISTANT_DASHBOARD_URL:
+        warnings.append("HOME_ASSISTANT_DASHBOARD_URL not set - ha_screen disabled")
+    if not os.path.exists(SCHEDULE_CONFIG_PATH):
+        warnings.append(
+            f"schedule_config.json not found at {SCHEDULE_CONFIG_PATH} - "
+            f"falling back to a schedule derived from WAKE_HOUR/SLEEP_HOUR"
+        )
+    if not HOME_ASSISTANT_API_URL or not HOME_ASSISTANT_TOKEN:
+        warnings.append(
+            "HOME_ASSISTANT_API_URL/HOME_ASSISTANT_TOKEN not set - "
+            "day-type resolution will always fall back to DAY_TYPE_FALLBACK"
+        )
 
     # Log results
     if errors:

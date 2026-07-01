@@ -3,7 +3,7 @@
 Config loading, data fetching, and rendering all live in sibling modules
 (config, health, fetchers, mqtt_client, render/*) — this file just wires
 them together: startup validation, hardware init, the boot sequence, and
-the main wake/sleep/fetch/render loop.
+the main scheduler/fetch/render loop.
 """
 import sys
 import time
@@ -15,12 +15,17 @@ from datetime import datetime
 
 from config import *
 from health import watchdog, system_health
-from fetchers import cache, fetch_data_parallel, http_session
+from fetchers import cache, fetch_data_parallel, http_session, get_day_type_sensors
 from mqtt_client import MQTTClient
-from render.common import DisplayManager, draw_mdi_icon, get_font, get_font_bold, MDI
+from render.common import DisplayManager, get_font
 from render.bus_train import display_combined_view
 from render.debug_screen import display_debug_screen
+from render.ha_screen import display_ha_screen
 from render.sleep_screen import display_sleep_screen
+from render.daytime_screen import display_daytime_screen
+from render.boot_screen import display_boot_checklist
+from scheduler import load_schedule_config, resolve_active_screen, get_next_wake_time
+from day_type import day_type_cache, resolve_todays_day_type
 
 from waveshare_epd import epd7in5b_V2
 import pigpio  # GPIO backend used transitively by the waveshare driver; imported
@@ -63,13 +68,6 @@ signal.signal(signal.SIGTERM, signal_handler)
 # ============================================================================
 # MAIN LOOP
 # ============================================================================
-def is_in_wake_window(current_hour):
-    """Determine if current time is within the wake window."""
-    if WAKE_HOUR > SLEEP_HOUR:
-        return (current_hour >= WAKE_HOUR) or (current_hour < SLEEP_HOUR)
-    else:
-        return (current_hour >= WAKE_HOUR) and (current_hour < SLEEP_HOUR)
-
 def main():
     """Main application loop."""
     global mqtt_client
@@ -94,6 +92,12 @@ def main():
         else:
             logging.info("Journey time tracking DISABLED")
 
+        schedule = load_schedule_config(SCHEDULE_CONFIG_PATH, WAKE_HOUR, SLEEP_HOUR)
+        logging.info(f"Schedule loaded: {schedule['screens']}")
+
+        if FORCE_SCREEN:
+            logging.warning(f"FORCE_SCREEN={FORCE_SCREEN} active - schedule/day-type resolution bypassed for testing")
+
         mqtt_client = MQTTClient()
 
         epd = epd7in5b_V2.EPD()
@@ -107,19 +111,12 @@ def main():
         if DEBUG_SKIP_TIME_CHECK:
             display_debug_screen(display_mgr, boot_time)
         else:
-            draw, draw_r = display_mgr.clear_images()
-            boot_font = get_font_bold(FONT_LARGE)
-
-            draw_mdi_icon(draw, HEADER_ICON_X, HEADER_ICON_Y, MDI.BUS_MARKER, size=HEADER_ICON_SIZE, color=0)
-
-            draw.text((85, HEADER_TEXT_Y), "System Starting...", font=boot_font, fill=0)
-            draw_r.text((COLUMN_OFFSET - 100, SCREEN_HEIGHT // 2),
-                       f"Booted: {boot_time}", font=get_font(FONT_TIMESTAMP), fill=0)
-
-            display_mgr.display()
+            display_boot_checklist(display_mgr, boot_time)
 
         default_font = get_font(BUS_NUMBER_FONT_SIZE)
-        is_sleeping = False
+        is_epd_asleep = False
+        active_screen = None
+        logged_schedule_warnings = set()
         stats_counter = 0
 
         while True:
@@ -129,7 +126,6 @@ def main():
                 logging.critical("Watchdog detected stuck loop - restarting...")
                 return 1
 
-            current_hour = datetime.now().hour
             manual_refresh = False
 
             if refresh_requested.is_set():
@@ -138,58 +134,113 @@ def main():
                 refresh_requested.clear()
                 cache.clear()
 
-                if is_sleeping:
+                if is_epd_asleep:
                     logging.info("Waking display for manual refresh")
                     epd.init()
                     epd.Clear()
-                    is_sleeping = False
+                    is_epd_asleep = False
 
-            if not DEBUG_SKIP_TIME_CHECK:
-                if not is_in_wake_window(current_hour) and not manual_refresh:
-                    if not is_sleeping:
-                        logging.info(f"Outside wake window. Entering sleep mode until {WAKE_HOUR}:00")
-
-                        if mqtt_client:
-                            mqtt_client.publish_status("sleeping")
-
-                        if HOME_ASSISTANT_SLEEP_URL and display_sleep_screen(display_mgr, HOME_ASSISTANT_SLEEP_URL):
-                            logging.debug("Sleep screen displayed successfully")
-                            epd.sleep()
-                            is_sleeping = True
-                        else:
-                            logging.warning("Could not display sleep screen, will retry")
-
-                    time.sleep(SLEEP_INTERVAL)
-                    continue
-
-                if is_sleeping:
-                    logging.info(f"Waking up display")
-                    epd.init()
-                    epd.Clear()
-                    is_sleeping = False
-
-                    if mqtt_client:
-                        mqtt_client.publish_status("awake")
-            else:
-                if is_sleeping:
+            if DEBUG_SKIP_TIME_CHECK:
+                if is_epd_asleep:
                     logging.info("DEBUG mode: Waking display")
                     epd.init()
                     epd.Clear()
-                    is_sleeping = False
+                    is_epd_asleep = False
 
-            # Fetch all data including API-based journey times
-            bus_info, train_info, weather_info, journey_times = fetch_data_parallel(force_refresh=manual_refresh)
+                bus_info, train_info, weather_info, journey_times = fetch_data_parallel(force_refresh=manual_refresh)
+                display_combined_view(display_mgr, default_font, bus_info, train_info, weather_info,
+                                    journey_times=journey_times, manual_refresh=manual_refresh, mqtt_client=mqtt_client)
 
-            display_combined_view(display_mgr, default_font, bus_info, train_info, weather_info,
-                                journey_times=journey_times, manual_refresh=manual_refresh, mqtt_client=mqtt_client)
+                if mqtt_client:
+                    mqtt_client.publish_status("idle")
 
-            if mqtt_client:
-                mqtt_client.publish_status("idle")
+                stats_counter += 1
+                if stats_counter >= 10:
+                    system_health.log_stats()
+                    stats_counter = 0
 
-            stats_counter += 1
-            if stats_counter >= 10:
-                system_health.log_stats()
-                stats_counter = 0
+                time.sleep(WAKE_INTERVAL)
+                continue
+
+            if FORCE_SCREEN:
+                screen_name, schedule_warnings = FORCE_SCREEN, []
+            else:
+                day_type = resolve_todays_day_type(day_type_cache, get_day_type_sensors, DAY_TYPE_FALLBACK)
+                screen_name, schedule_warnings = resolve_active_screen(schedule, day_type, datetime.now())
+
+            for warning in schedule_warnings:
+                if warning not in logged_schedule_warnings:
+                    logging.warning(f"Schedule conflict: {warning}")
+                    logged_schedule_warnings.add(warning)
+
+            screen_changed = screen_name != active_screen
+
+            if screen_name == "sleep_screen":
+                if screen_changed or manual_refresh:
+                    if screen_changed and mqtt_client:
+                        mqtt_client.publish_status("sleeping")
+
+                    display_sleep_screen(display_mgr, next_wake_time=get_next_wake_time(schedule))
+                    epd.sleep()
+                    is_epd_asleep = True
+
+                active_screen = "sleep_screen"
+                # sleep_screen is the ultimate override — like ha_screen, it
+                # skips fetch_data_parallel() entirely while active (no
+                # LTA/weather polling).
+                time.sleep(SLEEP_INTERVAL)
+                continue
+
+            if screen_name == "ha_screen":
+                if screen_changed or manual_refresh:
+                    if screen_changed and mqtt_client:
+                        mqtt_client.publish_status("sleeping")
+
+                    if HOME_ASSISTANT_DASHBOARD_URL and display_ha_screen(display_mgr, HOME_ASSISTANT_DASHBOARD_URL):
+                        logging.debug("ha_screen displayed successfully")
+                        epd.sleep()
+                        is_epd_asleep = True
+                    else:
+                        logging.warning("Could not display ha_screen, will retry")
+
+                active_screen = "ha_screen"
+                # ha_screen deliberately skips fetch_data_parallel() entirely
+                # while active — no LTA/weather polling until the schedule
+                # exits this window or a manual refresh forces a redraw.
+                time.sleep(SLEEP_INTERVAL)
+                continue
+
+            if is_epd_asleep:
+                logging.info("Waking up display")
+                epd.init()
+                epd.Clear()
+                is_epd_asleep = False
+
+                if mqtt_client:
+                    mqtt_client.publish_status("awake")
+
+            if screen_name == "bus_train_screen":
+                bus_info, train_info, weather_info, journey_times = fetch_data_parallel(force_refresh=manual_refresh)
+                display_combined_view(display_mgr, default_font, bus_info, train_info, weather_info,
+                                    journey_times=journey_times, manual_refresh=manual_refresh, mqtt_client=mqtt_client)
+
+                if mqtt_client:
+                    mqtt_client.publish_status("idle")
+
+                active_screen = "bus_train_screen"
+
+                stats_counter += 1
+                if stats_counter >= 10:
+                    system_health.log_stats()
+                    stats_counter = 0
+
+            else:  # daytime_screen — static placeholder, only redraw on entry/manual refresh
+                if screen_changed or manual_refresh:
+                    display_daytime_screen(display_mgr)
+                    if mqtt_client:
+                        mqtt_client.publish_status("idle")
+
+                active_screen = "daytime_screen"
 
             time.sleep(WAKE_INTERVAL)
 
