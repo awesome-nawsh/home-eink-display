@@ -56,6 +56,7 @@ BUS_LOAD_MAP_TEXT = {'SEA': 'Seats', 'SDA': 'Standing', 'LSD': 'Limited'}
 COLUMN_WIDTH_RATIO = 0.5
 BUS_BOX_HEIGHT = 60
 BUS_BOX_WIDTH = 160
+BUS_BOX_Y_OFFSET = 70  # y_start for draw_bus_section: 15px below the header divider at y=55
 BUS_BOX_Y_SPACING = 105
 BUS_NUMBER_FONT_SIZE = 32
 LOAD_FONT_SIZE = 16
@@ -1251,7 +1252,7 @@ def display_combined_view(display_mgr, font, bus_info, train_info, weather_info,
     draw_r.text((80, 18), HEADER_A, font=bus_header_font, fill=0)
     draw_r.line((10, 55, column_offset - 10, 55), fill=0, width=1)
     
-    final_bus_y = draw_bus_section(draw, draw_r, bus_info, font, 70, load_font, journey_times)
+    final_bus_y = draw_bus_section(draw, draw_r, bus_info, font, BUS_BOX_Y_OFFSET, load_font, journey_times)
     
     # ========== RIGHT COLUMN: TRAIN STATUS AND WEATHER ==========
     train_x = column_offset + 20

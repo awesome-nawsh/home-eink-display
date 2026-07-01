@@ -19,7 +19,7 @@ Pixel-level reference for everything drawn onto the e-ink panel by `app/main.py`
   COLUMN_WIDTH_RATIO = 0.5
   BUS_BOX_HEIGHT = 60
   BUS_BOX_WIDTH = 160
-  BUS_BOX_Y_OFFSET = 50        # defined but NOT used by draw_bus_section (caller passes y_start=70 directly)
+  BUS_BOX_Y_OFFSET = 70        # y_start passed to draw_bus_section; 15px below the header divider at y=55
   BUS_BOX_Y_SPACING = 105
   BUS_NUMBER_FONT_SIZE = 32
   LOAD_FONT_SIZE = 16
