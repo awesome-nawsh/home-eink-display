@@ -41,24 +41,31 @@ Technical breakdown of how the system is put together. Companion to [specificati
 
 ## 3. Module Layout
 
-`app/main.py` was originally a single ~1600-line file (design.md §2 flagged this as expected to change once the file outgrew a single-file design). As of the v14 rewrite's Phase 1, it's split into focused modules — a pure relocation with no behavior change; every module below still does exactly what it did as part of the old monolith.
+`app/main.py` was originally a single ~1600-line file (design.md §2 flagged this as expected to change once the file outgrew a single-file design). As of the v14 rewrite's Phase 1, it's split into focused modules — a pure relocation with no behavior change; every module below still does exactly what it did as part of the old monolith. Phase 2 adds the four-screen scheduler (`scheduler.py`), day-type resolution (`day_type.py`), and the boot connectivity checklist (`boot_checks.py`, `render/boot_screen.py`).
 
 | Path | Role |
 |---|---|
-| `app/main.py` | Entry point / orchestration only: startup validation, hardware init, the boot screen, and the main wake/sleep/fetch/render loop. Imports everything else. |
+| `app/main.py` | Entry point / orchestration only: startup validation, hardware init, the boot screen, and the main scheduler/fetch/render loop. Imports everything else. |
 | `app/config.py` | All environment variable loading and layout constants (`SCREEN_WIDTH`/`SCREEN_HEIGHT`/`COLUMN_OFFSET` and everything derived from them), `validate_configuration()`, the `refresh_requested` event, `boot_timestamp`. Every other module imports from here — the single source of truth for configuration. |
 | `app/health.py` | `Watchdog` (stuck-loop detection) and `SystemHealth` (API-call/display-update counters, periodic stats logging), plus their module-level singleton instances. |
-| `app/fetchers.py` | The shared `http_session` (retrying `requests.Session`), `DataCache`, `BackoffManager`, and every data-fetch function: `get_bus_arrival`, `get_train_disruptions`, `get_weather_from_homeassistant`, `get_bus_stop_coordinates`, the OneMap/Google journey-time calculators, and `fetch_data_parallel()`. |
+| `app/fetchers.py` | The shared `http_session` (retrying `requests.Session`), `DataCache`, `BackoffManager`, and every data-fetch function: `get_bus_arrival`, `get_train_disruptions`, `get_weather_from_homeassistant`, `get_bus_stop_coordinates`, `get_day_type_sensors`, the OneMap/Google journey-time calculators, and `fetch_data_parallel()`. |
 | `app/mqtt_client.py` | `MQTTClient` only — instantiated inside `main()`, not a module-level singleton (matches pre-split behavior). |
+| `app/scheduler.py` | Pure schedule logic for the four-screen model: `load_schedule_config()` (the only file-I/O boundary, reads `schedule_config.json`), `validate_schedule()`, `default_schedule_from_env()` (migration fallback from `WAKE_HOUR`/`SLEEP_HOUR`), `detect_overlaps()`, `get_next_wake_time()`, `resolve_active_screen()` (fixed precedence: `sleep_screen` > `bus_train_screen` > `daytime_screen` > `ha_screen`). |
+| `app/day_type.py` | Pure day-type resolution: `resolve_day_type()`, `DayTypeCache` (date-keyed, resolves once per calendar day), `resolve_todays_day_type()`. |
+| `app/boot_checks.py` | Boot-time connectivity probes (`check_network`, `check_internet`, `check_lta_api`, `check_home_assistant`), `run_all_checks()`, and the pure `format_checklist_lines()`. |
 | `app/render/common.py` | Shared rendering primitives: `MDI` icon glyph table, font loaders (`get_font`/`get_font_bold`/`get_icon_font`), `DisplayManager`, `draw_mdi_icon`, `get_weather_icon`. |
-| `app/render/bus_train.py` | The "awake" screen: `draw_bus_section`, `draw_train_section`, `draw_weather_section_right`, `draw_timestamp`, `display_combined_view`. |
-| `app/render/sleep_screen.py` | `display_sleep_screen()` — fetches and displays the external HA dashboard screenshot outside the wake window. Named `sleep_screen` (not yet `daytime`) deliberately — that rename is a later-phase concept change, not part of the Phase 1 relocation. |
+| `app/render/bus_train.py` | The `bus_train_screen`: `draw_bus_section`, `draw_train_section`, `draw_weather_section_right`, `draw_timestamp`, `display_combined_view`. |
+| `app/render/sleep_screen.py` | `display_sleep_screen()` — the true overnight screen: minimal, locally-PIL-drawn (`MDI.WEATHER_NIGHT` icon + "Next wake: HH:MM", no network fetch). Highest precedence of the four screens — the "ultimate override," never gated by day-type. This is a *new* Phase 2 file — not the same file as the pre-Phase-2 `sleep_screen.py`, which was renamed to `ha_screen.py` (below) before this file was (re)created. |
+| `app/render/ha_screen.py` | `display_ha_screen()` — fetches and displays the external HA dashboard screenshot. Renamed from `sleep_screen.py`/`display_sleep_screen()` earlier in Phase 2; now the **lowest precedence** of the four screens, shown per its own `schedule_config.json` entry only when none of the other three claim that moment. |
+| `app/render/daytime_screen.py` | `display_daytime_screen()` — currently a placeholder ("Day time screen" centered), real content deferred (see `todo.md`); beats `ha_screen` on overlap and is the safe fallback when no window matches at all. |
+| `app/render/boot_screen.py` | `display_boot_checklist()` — runs `boot_checks.run_all_checks()` and renders all results in a single draw+display() pass, replacing the old static "System Starting..." text. |
 | `app/render/debug_screen.py` | `display_debug_screen()` — dev-only env-var dump shown at boot when `DEBUG_SKIP_TIME_CHECK=true`. |
-| `app/web_config.py` | Standalone Flask app to edit `.env` from a browser (`CONFIG_SCHEMA` dict drives an auto-generated form; reads `SystemHealth`-shaped status conceptually but does not share process memory with `main.py`). Untouched by the Phase 1 module split. |
+| `app/web_config.py` | Standalone Flask app to edit `.env` from a browser (`CONFIG_SCHEMA` dict drives an auto-generated form; reads `SystemHealth`-shaped status conceptually but does not share process memory with `main.py`). Untouched by Phases 1-2 — its Schedule Settings section still references the legacy `WAKE_HOUR`/`SLEEP_HOUR`/`HOME_ASSISTANT_SLEEP_URL` vars until its Phase 3 rewrite. |
 | `lib/waveshare_epd/` | Vendored Waveshare display drivers; only `epd7in5b_V2.py` + `epdconfig.py` are live. |
 | `pic/` | Fonts loaded by PIL at runtime. |
 | `systemd/bus_display.service` | Deployed unit file for the main process — `ExecStart` still points at `app/main.py`, unaffected by the module split since the entry point's path didn't change. |
-| `tools/layout_editor.html` | Standalone HTML/JS tool (no build step) for visually mocking up and exporting the on-screen layout — not deployed to the Pi, dev-only. |
+| `tools/layout_editor.html` | Standalone HTML/JS tool (no build step) for visually mocking up and exporting the on-screen layout — not deployed to the Pi, dev-only. Still references the pre-rename `sleep_screen`/`display_sleep_screen()` naming (see `todo.md`). |
+| `tests/` | Stdlib `unittest` tests for the pure-logic modules (`scheduler.py`, `day_type.py`, `boot_checks.py`'s formatting function) — run via `python -m unittest discover -s tests`. |
 
 ## 4. Runtime Components
 
@@ -74,6 +81,7 @@ Instantiated once at import time and shared across the whole process (each still
 | `cache` | `DataCache` | `fetchers.py` | In-memory TTL cache for bus/train/weather/journey-time responses (process-lifetime only, no persistence) |
 | `mqtt_client` | `MQTTClient` | `main.py` (class defined in `mqtt_client.py`) | Created inside `main()`; wraps paho-mqtt, runs its network loop on a background daemon thread |
 | `refresh_requested` | `threading.Event` | `config.py` | Cross-thread signal: MQTT callback thread → main loop thread |
+| `day_type_cache` | `DayTypeCache` | `day_type.py` | Date-keyed (not TTL) cache — resolves `school_day`/`work_day`/`off_day` once per calendar day, not on every loop iteration |
 
 ### 4.2 Data-fetch layer
 - `get_bus_arrival()`, `get_train_disruptions()`, `get_weather_from_homeassistant()` — each follows the same pattern: check backoff → check cache → live HTTP fetch → update cache + reset backoff on success, or fall back to stale cache + record backoff failure on error.
@@ -86,12 +94,13 @@ Instantiated once at import time and shared across the whole process (each still
 - `DisplayManager` — owns the two PIL `Image` buffers (`black_image`, `red_image`) matching the e-ink panel's B/W/R model; `clear_images()` resets both to white and returns fresh `ImageDraw.Draw` handles, `display()` pushes both buffers to the physical panel via the Waveshare driver.
 - Font helpers (`get_font`, `get_font_bold`, `get_icon_font`) — all `lru_cache`'d PIL `ImageFont` loaders; icon font renders individual glyphs from the Material Design Icons webfont as text.
 - Section draw functions (`draw_bus_section`, `draw_train_section`, `draw_weather_section_right`, `draw_timestamp`, plus inline drawing in `display_combined_view`) — pure functions that take a `draw`/`draw_r` pair (black/red buffers) and data, and paint directly onto them. See [screen_layout.md](screen_layout.md) for exact coordinates/fonts per element.
-- `display_combined_view()` — the main "awake" screen: draws header, bus column, train column, weather, then calls `display_mgr.display()`.
-- `display_debug_screen()`, `display_sleep_screen()` — alternate full-screen renders (config dump; HA dashboard screenshot respectively) used outside the normal awake flow.
+- `display_combined_view()` — the `bus_train_screen` renderer: draws header, bus column, train column, weather, then calls `display_mgr.display()`.
+- `display_debug_screen()`, `display_sleep_screen()`, `display_ha_screen()`, `display_daytime_screen()`, `display_boot_checklist()` — alternate full-screen renders (config dump; true overnight screen; HA dashboard screenshot; placeholder; boot connectivity checklist) used outside the normal `bus_train_screen` flow.
 
 ### 4.4 Control layer
-- `is_in_wake_window()` — pure function, handles overnight wrap-around wake/sleep windows.
-- `main()` — startup validation → hardware init → boot screen → `while True` loop (see [design.md](design.md) for the full state machine).
+- `scheduler.resolve_active_screen(schedule, day_type, now)` — pure function; returns which of the four screens (`sleep_screen`/`bus_train_screen`/`daytime_screen`/`ha_screen`) is active, applying the fixed precedence order and gating `bus_train_screen` on `day_type == 'school_day'`. Replaces the old `is_in_wake_window()`.
+- `day_type.resolve_todays_day_type()` — resolves `school_day`/`work_day`/`off_day` once per calendar day via `day_type_cache`, falling back to yesterday's value (or `DAY_TYPE_FALLBACK`) if Home Assistant is unreachable.
+- `main()` — startup validation → load schedule → hardware init → boot checklist → main loop: resolve day-type → resolve active screen → dispatch to the matching screen (see [design.md](design.md) for the full state machine). While `sleep_screen` or `ha_screen` is active, the loop skips `fetch_data_parallel()` entirely (no LTA/weather polling) and only redraws on screen-entry or manual refresh.
 - `cleanup()` / `signal_handler()` — shutdown path: disconnect MQTT, close HTTP session, release GPIO, log final stats. Wired to `SIGINT`/`SIGTERM` and `atexit`.
 
 ### 4.5 MQTT integration
@@ -99,28 +108,45 @@ Instantiated once at import time and shared across the whole process (each still
 - Subscribes to `MQTT_TOPIC_REFRESH`; a matching payload sets `refresh_requested`, consumed by the main loop on its next iteration.
 - Publishes to `MQTT_TOPIC_STATUS` (retained) at each lifecycle transition: `online` → `sleeping`/`awake` → `refreshing` → `idle` → `offline`.
 
-## 5. Data Flow — One Wake-Cycle Iteration
+## 5. Data Flow — One Loop Iteration
 
 ```
 watchdog.feed()
    │
    ▼
-check refresh_requested (MQTT) ──► if set: cache.clear(), manual_refresh=True, wake panel if sleeping
+check refresh_requested (MQTT) ──► if set: cache.clear(), manual_refresh=True, wake panel if asleep
    │
    ▼
-is_in_wake_window()? ──► No: publish "sleeping" (once), try display_sleep_screen(), epd.sleep(), sleep(SLEEP_INTERVAL), continue
-   │ Yes
-   ▼
-fetch_data_parallel(force_refresh=manual_refresh)
-   │  (bus, train, weather fetched concurrently; journey times computed after)
-   ▼
-display_combined_view(bus_info, train_info, weather_info, journey_times, manual_refresh, mqtt_connected)
-   │  (full redraw of both image buffers, pushed to physical panel)
-   ▼
-mqtt_client.publish_status("idle")
+resolve_todays_day_type() (cheap — only hits HA on calendar-date rollover)
    │
    ▼
-every 10th iteration: system_health.log_stats()
+resolve_active_screen(schedule, day_type, now) ──► 'sleep_screen' | 'bus_train_screen' | 'daytime_screen' | 'ha_screen'
+   │  (fixed precedence: sleep_screen > bus_train_screen[school_day-gated] > daytime_screen > ha_screen;
+   │   any schedule overlap logs a warning once)
+   ▼
+┌─ sleep_screen (ultimate override) ───────────────────────────────────────┐
+│ on entry or manual refresh: display_sleep_screen(next_wake_time), epd.sleep() │
+│ fetch_data_parallel() is NOT called — no LTA/weather polling while active │
+│ sleep(SLEEP_INTERVAL), continue                                          │
+└───────────────────────────────────────────────────────────────────────┘
+   │ (not sleep_screen)
+   ▼
+┌─ ha_screen (lowest precedence — only shows in an unclaimed gap) ─────────┐
+│ on entry or manual refresh: display_ha_screen(), epd.sleep()             │
+│ fetch_data_parallel() is NOT called — no LTA/weather polling while active │
+│ sleep(SLEEP_INTERVAL), continue                                          │
+└───────────────────────────────────────────────────────────────────────┘
+   │ (not sleep_screen or ha_screen — wake panel if it was asleep)
+   ▼
+┌─ bus_train_screen ──────────────────┐   ┌─ daytime_screen ─────────────┐
+│ fetch_data_parallel(force_refresh=  │   │ on entry or manual refresh:  │
+│   manual_refresh)                    │   │   display_daytime_screen()   │
+│ display_combined_view(...)           │   │ (static placeholder — no     │
+│ mqtt_client.publish_status("idle")   │   │  redraw every tick)          │
+└──────────────────────────────────────┘   └───────────────────────────────┘
+   │
+   ▼
+every 10th bus_train_screen iteration: system_health.log_stats()
    │
    ▼
 sleep(WAKE_INTERVAL) → loop
@@ -136,7 +162,8 @@ sleep(WAKE_INTERVAL) → loop
 | OneMap routing | Pi → OneMap | HTTPS, optional bearer token | Geocode + public-transport route, only if `ROUTING_API_PROVIDER=onemap` |
 | Google Directions | Pi → Google | HTTPS, API key query param | Only if `ROUTING_API_PROVIDER=google` |
 | Home Assistant (weather) | Pi → HA | HTTPS REST, bearer token | Reads a single weather entity's state/attributes |
-| Home Assistant (sleep screenshot) | Pi → HA (Puppeteer add-on) | HTTPS, query-param config | Returns a rendered image, not JSON; converted to grayscale and pushed straight to the black buffer |
+| Home Assistant (day-type sensors) | Pi → HA | HTTPS REST, bearer token | Reads `binary_sensor.school_day`/`binary_sensor.workday_sensor`; only once per calendar day (`day_type.DayTypeCache`), not every loop iteration |
+| Home Assistant (ha_screen dashboard) | Pi → HA (Puppeteer add-on) | HTTPS, query-param config | Returns a rendered image, not JSON; converted to grayscale and pushed straight to the black buffer. Only fetched on entry into `ha_screen` or a manual refresh — not polled every loop iteration |
 | MQTT broker | Pi ↔ broker | MQTT (paho), optional auth | Bidirectional: subscribes for refresh commands, publishes status |
 | Web config panel | Browser → Pi | HTTP, Flask session auth | Local-network only by default; edits `.env` directly on disk |
 

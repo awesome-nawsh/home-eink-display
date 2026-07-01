@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "screens": {
+    "sleep_screen": { "start": "21:00", "end": "06:00" },
+    "ha_screen": { "start": "20:00", "end": "21:00" },
+    "bus_train_screen": { "start": "06:30", "end": "08:30" },
+    "daytime_screen": { "start": "06:00", "end": "22:00" }
+  }
+}

@@ -11,15 +11,19 @@ buffers into a single viewable PNG (black -> black, red -> red pixels),
 so layout/rendering changes can be visually checked without a Pi.
 
 Usage:
-    python3 tools/preview_render.py [--screen combined|debug]
+    python3 tools/preview_render.py [--screen combined|debug|daytime|sleep|boot]
                                      [--disruption] [--no-weather]
                                      [--no-journey] [--manual-refresh]
                                      [--out PATH]
 
 Requires: pip install Pillow python-dotenv (see requirements.txt).
-Does NOT preview the sleep screen — that screen fetches a live HA
-dashboard screenshot over the network, which isn't something to fake
-locally.
+Does NOT preview ha_screen — that screen fetches a live HA dashboard
+screenshot over the network, which isn't something to fake locally.
+sleep_screen (the true overnight screen) IS previewable — it's purely
+local PIL drawing, no network fetch.
+--screen boot uses fixed fake connectivity results (reusing --no-weather/
+--no-journey to simulate failed checks) so it never touches the network
+either.
 """
 import argparse
 import os
@@ -130,6 +134,43 @@ def render_debug(args):
     return mgr
 
 
+def render_daytime(args):
+    from render import common as rc
+    from render.daytime_screen import display_daytime_screen
+
+    mgr = FakeDisplayManager(rc.SCREEN_WIDTH, rc.SCREEN_HEIGHT)
+    display_daytime_screen(mgr)
+    return mgr
+
+
+def render_sleep(args):
+    from render import common as rc
+    from render.sleep_screen import display_sleep_screen
+
+    mgr = FakeDisplayManager(rc.SCREEN_WIDTH, rc.SCREEN_HEIGHT)
+    display_sleep_screen(mgr, next_wake_time="06:30")
+    return mgr
+
+
+def render_boot(args):
+    from render import common as rc
+    from render.boot_screen import display_boot_checklist
+
+    mgr = FakeDisplayManager(rc.SCREEN_WIDTH, rc.SCREEN_HEIGHT)
+    # Fixed fake results — boot_screen's checks hit real sockets/HTTP, which
+    # this hardware-free preview must never touch. Reuses --no-weather/
+    # --no-journey as a cheap way to simulate a failed check without adding
+    # new CLI flags just for this.
+    fake_results = [
+        ("Network", True),
+        ("Internet", True),
+        ("LTA API", not args.no_journey),
+        ("Home Assistant", not args.no_weather),
+    ]
+    display_boot_checklist(mgr, datetime.now().strftime("%H:%M on %d %b %Y"), check_results=fake_results)
+    return mgr
+
+
 def composite_preview(mgr):
     """Merge the black/red 1-bit buffers into one viewable RGB image."""
     preview = Image.new('RGB', (mgr.width, mgr.height), 'white')
@@ -147,7 +188,7 @@ def composite_preview(mgr):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--screen', choices=['combined', 'debug'], default='combined',
+    parser.add_argument('--screen', choices=['combined', 'debug', 'daytime', 'sleep', 'boot'], default='combined',
                          help='Which screen to render (default: combined)')
     parser.add_argument('--disruption', action='store_true', help='Simulate a train disruption instead of "all clear"')
     parser.add_argument('--no-weather', action='store_true', help='Simulate weather being unavailable')
@@ -157,10 +198,14 @@ def main():
                          help='Output PNG path (default: tools/preview_output.png, gitignored)')
     args = parser.parse_args()
 
-    if args.screen == 'combined':
-        mgr = render_combined(args)
-    else:
-        mgr = render_debug(args)
+    dispatch = {
+        'combined': render_combined,
+        'debug': render_debug,
+        'daytime': render_daytime,
+        'sleep': render_sleep,
+        'boot': render_boot,
+    }
+    mgr = dispatch[args.screen](args)
 
     preview = composite_preview(mgr)
     preview.save(args.out)

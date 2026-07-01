@@ -42,8 +42,8 @@ class SystemHealth:
     """Track and report system health metrics."""
     def __init__(self):
         self.metrics = {
-            'api_calls': {'bus': 0, 'train': 0, 'weather': 0, 'routing': 0},
-            'api_errors': {'bus': 0, 'train': 0, 'weather': 0, 'routing': 0},
+            'api_calls': {'bus': 0, 'train': 0, 'weather': 0, 'routing': 0, 'day_type': 0},
+            'api_errors': {'bus': 0, 'train': 0, 'weather': 0, 'routing': 0, 'day_type': 0},
             'display_updates': 0,
             'manual_refreshes': 0,
             'last_update': None

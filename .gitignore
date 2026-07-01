@@ -2,6 +2,9 @@
 .env
 *.env
 
+# Real schedule config (per-deployment) — schedule_config.json.example is the committed template
+app/schedule_config.json
+
 # Python
 __pycache__/
 *.py[cod]
