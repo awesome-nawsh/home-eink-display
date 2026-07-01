@@ -48,6 +48,9 @@ logs/
 # Pi-specific runtime files
 *.pid
 
+# Local render preview output (tools/preview_render.py)
+tools/preview_output.png
+
 # Demo / test bitmaps from upstream Waveshare project (large, not needed)
 pic/*.bmp
 pic/*.jpg
