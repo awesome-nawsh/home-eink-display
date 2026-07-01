@@ -3,7 +3,7 @@
 
 ***Disclaimer:*** this is my first project on this, I am by no means an expert and just do these fun projects on the side to challenge myself.
 
-I’ve forked and adapted the code from [awesomelionel's project](https://github.com/awesomelionel/singapore-bus-timing-edisplay) to create my own version of the SGBusAuntie.
+I've forked and adapted the code from [awesomelionel's project](https://github.com/awesomelionel/singapore-bus-timing-edisplay) to create my own version of the SGBusAuntie.
 
 This project was a fun project that I keep tweaking but what I was trying to do was
 
@@ -36,31 +36,73 @@ Here is the mount using the IKEA picture frame
 <img src="images/IMG_2581.jpeg" height=400 width=300>
 
 ### Software
-  1) All written in Pi and referncing the libraries from the original fork plus the waveshare libraries for the display
-  2) You will need an AIP key to access the data from the LTA via their DataMall (link here) and for Data from OneMap or Google
-  3) Assume you runnng a homeassistant instance in your home
-  4) Install the Graphite Theme (link) and also Puppeteer add-in (link) on the homeassistant instance 
+  1) All written in Python, using the Waveshare e-ink libraries plus the LTA DataMall, OneMap/Google, and Home Assistant APIs
+  2) You will need an API key to access the data from the LTA via their DataMall, and (optionally) an API key from OneMap or Google Maps for journey-time estimates
+  3) A running Home Assistant instance is optional but unlocks weather, day-type-aware scheduling (school day vs. work day vs. off day), and the dashboard-screenshot screen
+  4) If you want the HA dashboard screenshot screen, install the Graphite Theme and Puppeteer add-on on your Home Assistant instance
 
 ### Installation
-  1) Follow the original authors suggestions to install the libraries and basic code
-  2) Change the main.py to this version
-  3) Setup your dashboard in home assistant and test the look and feel through your browser using the instructions in the Puppeteer add-on Github
-  4) Adjust the parameter/config file to suit your situation [API key, bus stop codes, homeassistant instance, dashboard url, etc]
-  5) Follow the original authors code to setup the file as a service to run when the Rpi boots
+
+**Full step-by-step instructions are in [How-to.md](How-to.md)** — clone, install dependencies, configure `.env` and the screen schedule, deploy both systemd services (the display + the web config panel), and verify it's working. That's now the canonical setup guide; the rest of this README is the project's backstory and roadmap.
+
+Short version:
+1) Clone this repo onto your Pi
+2) Install dependencies (`pigpio` via apt, everything else via `pip3 install -r requirements.txt --break-system-packages`)
+3) Copy `.env.example` → `.env` and fill in your LTA DataMall API key, bus stop code, and (optionally) Home Assistant/routing details
+4) Deploy `systemd/bus_display.service` (the display) and `systemd/web_config.service` (a browser-based settings panel at `http://<pi-ip>:5000`, no SSH needed for day-to-day config changes)
+5) If you want the HA dashboard screen, set up your dashboard and the Puppeteer add-on per its own GitHub instructions
 
 ### Disclaimers
 1) This was a weekend project and i am not a professional software engineer !
 2) Yes there is optimisation to this code - happy for suggestions etc but will be updating as and when I get the time
 
+---
+
+### What It Does Now
+
+The display cycles through four screens on independent schedules (configurable via the web UI or `app/schedule_config.json`):
+- **Bus/train view** — live bus arrivals, MRT disruption alerts, weather, and journey-time estimates. Only shows on school days (resolved automatically from Home Assistant, if configured).
+- **Sleep screen** — a minimal overnight screen, no network calls, lowest power draw.
+- **Daytime placeholder** — shown on non-school days for now (real content is still on the roadmap, see below).
+- **HA dashboard screen** — an optional screenshot of a Home Assistant dashboard (weather, calendar, etc.), shown in any schedule gap the other three don't claim.
+
+A password-protected web config panel (`http://<pi-ip>:5000`) lets you edit settings and the schedule from a browser, with live conflict-checking and no SSH required for most changes.
+
+#### The new screens
+
+<img src="images/screen_boot.png" width=400> <img src="images/screen_sleep.png" width=400>
+
+*Boot connectivity checklist (left) and the overnight sleep screen (right) — both purely local, no network fetch for the sleep screen.*
+
+<img src="images/screen_daytime.png" width=400>
+
+*The daytime placeholder screen — shown on non-school days for now, real content still on the roadmap.*
+
+#### The web config panel
+
+<img src="images/webconfig_login.png" width=500>
+
+<img src="images/webconfig_settings.png" width=500>
+
+*Settings page — fields marked "applies live" (like `FORCE_SCREEN`) take effect within moments; everything else needs the "Restart Service" button.*
+
+<img src="images/webconfig_schedule.png" width=500>
+
+*Schedule editor — shows precedence conflicts before you save, so overlapping windows don't surprise you.*
+
+(Screenshots above use sample/placeholder data, not a real deployment's actual configuration.)
 
 ### Future Enhancement Ideas
 
-Potential features for future versions:
+Potential features for future versions (see `todo.md` in this repo for the fuller, actively-maintained list):
 - [ ] Multiple bus stops with tabs + button to switch tabs
 - [ ] Add a button and LED for refresh and reboot
 - [ ] Add Air quality data next to the weather
-- [ ] Add Calendar events from HA (only the days events)
-- [ ] Add Web interface for configuration
+- [ ] Add Calendar events from HA (only the days events), plus a direct calendar (`.ics`) integration for anyone not running Home Assistant
+- [ ] Weather fallback to a public API when Home Assistant isn't available
+- [ ] Real content for the daytime placeholder screen (currently just says "Day time screen")
+- [ ] A more modular/pluggable screen architecture (rolling screens, custom image slideshows, multiple HA dashboard targets)
+- [✅] ~~Web interface for configuration~~ (Added in v14.0 — session auth, live schedule editor, one-click restart)
 - [✅] ~~Commute time estimates~~ (Added in v13.0)
 - [✅] ~~Accessibility-optimized typography~~ (Added in v12.0)
 - [✅] ~~Bold emphasis for key information~~ (Added in v12.0)
@@ -72,7 +114,7 @@ Potential features for future versions:
 **Technologies Used:**
 - Waveshare E-Ink Display (7.5" V2)
 - Raspberry Pi Zero
-- Python 3
+- Python 3, Flask
 - Material Design Icons v7.4.47
 - Atkinson Hyperlegible Next Font (Braille Institute)
 - Paho MQTT
@@ -81,19 +123,13 @@ Potential features for future versions:
 
 -----
 
-**Current Version: v13.0**  
+**Current Version: v14.0**  
 **Status: Production Ready** ✅  
-**Last Updated: October 5, 2025**  
 
 -----
 
-### Breaking Changes
-V13 is backward compatible. Journey time feature is opt-in via the SHOW_JOURNEY_TIME=true
+### Getting Help / Contributing
 
-Journey time needs either teh OneMap from SG.gov or Goole Map APIs
-
-OneMap: Register at https://www.onemap.gov.sg/apidocs/
-Google Maps: Enable Directions API in Google Cloud Console
-
-*For detailed code, see the main artifact.*  
-*For issues or questions, refer to systemd service logs.*
+- Setup issues: see [How-to.md](How-to.md)'s troubleshooting section first, then `journalctl -u bus_display -f` / `journalctl -u web_config -f` for live logs.
+- Deeper questions about how something works: [architecture.md](architecture.md), [design.md](design.md), [specifications.md](specifications.md), and [screen_layout.md](screen_layout.md) cover structure, rationale, behavior, and exact pixel layout respectively.
+- What's planned but not built yet: `todo.md`.

@@ -2,6 +2,19 @@
 
 ## [V14] - Rewrite in progress (branch `v14-rewrite`)
 
+### Phase 4 — Dynamic (no-restart) config reload for the schedule and `FORCE_SCREEN`
+
+Since Phase 1, config is loaded once at process start; changing anything meant a restart (a one-click action since Phase 3's `/api/restart`, but still a restart). This phase makes exactly two things reloadable live, without one — deliberately not "everything," since retrofitting dotted `config.SOMEVAR` lookups across every module for variables nobody's asked to change without a restart would be a large, invasive rewrite for no real benefit. See `design.md` §15 for the full rationale.
+
+- `app/reload_watch.py` (new) — pure `get_mtime()`/`has_changed()` file-change detection, used as the mtime-poll backstop.
+- `config.py` — `DYNAMIC_CONFIG_VARS = ('FORCE_SCREEN',)`, `reload_dynamic_vars()` (re-reads `.env`, refreshes `FORCE_SCREEN` in place), `config_reload_requested` event, new `MQTT_TOPIC_CONFIG_RELOAD` var, explicit `ENV_FILE_PATH` constant (replacing the implicit `load_dotenv()` search).
+- `mqtt_client.py` — subscribes to `MQTT_TOPIC_CONFIG_RELOAD`; any message sets `config_reload_requested`.
+- `main.py` — each loop tick, checks `config_reload_requested` and the `.env`/`schedule_config.json` mtimes; reloads the schedule and/or `config.FORCE_SCREEN` (now read via dotted access, not a bare imported name, so it actually sees live updates) as needed.
+- `web_config.py` — saving the schedule now auto-publishes an MQTT `config_reload` message (no more "restart to apply" for schedule changes); saving only `FORCE_SCREEN` via the Settings page does the same. Everything else still needs a restart.
+- `web_config_schema.py`/`_field_macros.html` — `FORCE_SCREEN` is marked `'dynamic': True`, rendered with an "applies live" badge in the Settings UI.
+- New tests: `test_reload_watch.py`, `test_config_force_screen.py`.
+- Explicitly deferred (see `todo.md`): expanding `DYNAMIC_CONFIG_VARS` to more variables.
+
 ### Phase 3 — `web_config.py` rewrite: session auth, scheduler UI, `/api/restart`, secrets at rest
 
 Fixes a real auth bypass and closes out the last major file from before this rewrite. See `todo.md` for the full checklist.

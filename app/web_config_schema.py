@@ -46,7 +46,7 @@ CONFIG_SCHEMA = {
         'INTERNET_CHECK_URL': {'type': 'text', 'label': 'Internet Reachability Check URL', 'required': False, 'default': 'https://www.google.com/generate_204'},
         'FORCE_SCREEN': {
             'type': 'select', 'label': 'Force Screen (testing only — leave blank for normal operation)',
-            'options': [''] + list(SCREEN_NAMES), 'required': False,
+            'options': [''] + list(SCREEN_NAMES), 'required': False, 'dynamic': True,
         },
     },
     'Home Assistant': {

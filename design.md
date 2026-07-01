@@ -68,7 +68,7 @@ This model previously had a second, code-level version of the same gap: `main()`
 
 **Decision**: all configuration is read from `.env` via `python-dotenv` at import time into module-level constants (not passed as parameters, not re-read at runtime), with a single `validate_configuration()` gate at startup that can hard-fail the process before any hardware or network I/O happens.
 
-**Why**: fail-fast at startup is far cheaper to debug than failing three hours into unattended operation because a required key was missing. Treating config as static for the process lifetime (no hot-reload) is intentional — the systemd `Restart=on-failure` policy already means "change `.env`, restart the service" is the supported workflow (this is exactly what the web config panel's `/api/refresh` restart trigger assumes). Runtime hot-reloading of config was considered unnecessary complexity for a single-operator hobby deployment.
+**Why**: fail-fast at startup is far cheaper to debug than failing three hours into unattended operation because a required key was missing. Treating config as static for the process lifetime (no hot-reload) is intentional — the systemd `Restart=on-failure` policy already means "change `.env`, restart the service" is the supported workflow, and Phase 3's `/api/restart` makes that a one-click action. Runtime hot-reloading of *every* variable was considered unnecessary complexity for a single-operator hobby deployment — Phase 4 (§14) adds a narrow, deliberate exception for exactly two things (the schedule and `FORCE_SCREEN`), not a general hot-reload system.
 
 ## 10. Font and icon strategy
 
@@ -114,7 +114,17 @@ Collapsing to two constants read directly by every draw function (rather than th
 
 **Secrets-at-rest encryption — stated scope, not oversold**: `secrets_vault.py` encrypts password-type `.env` values (Fernet, via the `cryptography` package) so a `.env` file viewed, shared, or accidentally committed *in isolation* doesn't expose API keys/tokens in plaintext. This is explicitly **not** a defense against someone with full filesystem access to the Pi itself — the decryption key (`app/.encryption_key`) has to live on the same disk for the running app to use it, so a fully compromised device defeats it trivially. The value is narrower and real: it protects against the class of accidents this project has already had close calls with in this rewrite (nearly showing secret values in a chat transcript, a `.env` that could be screen-shared or backed up carelessly) — not against a determined attacker with root on the device.
 
-## 15. Related documents
+## 15. Dynamic config reload: a narrow allowlist, not a dotted-access rewrite
+
+**Decision**: Phase 4 makes exactly two things reloadable without a process restart — the schedule (`schedule_config.json`) and `FORCE_SCREEN` — via `config.DYNAMIC_CONFIG_VARS`, a `config.reload_dynamic_vars()` function, an MQTT `config_reload` topic, and an `.env`/schedule-file mtime-poll backstop in `main.py`'s loop. Every other configuration variable still requires a restart (one click, via Phase 3's `/api/restart`).
+
+**Why not reload everything**: since Phase 1, every module that needs configuration does `from config import *` (or named imports) — which *copies* each name into that module's own namespace at import time. Mutating `config.py`'s module attribute afterward doesn't update those already-copied names anywhere else; only code that does a dotted `config.SOMEVAR` lookup at the point of use sees a later change. Making *every* variable genuinely live would mean rewriting every read site across `main.py`, `fetchers.py`, `mqtt_client.py`, and every `render/*.py` module to use dotted lookups instead of the bare names they import today — a large, invasive change touching nearly the whole codebase, for variables nobody has actually asked to change without a restart (an MQTT broker address, an API key, a cache duration). The risk/reward doesn't justify it.
+
+**Why schedule + `FORCE_SCREEN` specifically**: `schedule` was already a plain local variable inside `main()`'s function scope (assigned once via `load_schedule_config()` before the loop) — there's no cross-module staleness problem to solve at all; reloading it is just calling that same function again and reassigning the same local variable, each loop tick. `FORCE_SCREEN` is the one variable that's actually been toggled repeatedly for real-hardware testing since Phase 2 shipped it — the "restart to test a screen, restart again to stop testing" friction was a genuine, observed annoyance worth removing. Both are also low-risk to reload live: neither touches a singleton that needs re-initializing (no MQTT reconnect, no HTTP session rebuild), unlike e.g. `MQTT_BROKER` or the LTA API URLs would.
+
+**Two trigger paths, not one**: the MQTT `config_reload` topic (published automatically by `web_config.py` after a schedule save, or manually) is the fast path — near-instant. The `.env`/`schedule_config.json` mtime-poll in `main.py`'s loop is the backstop for changes made by editing files directly (e.g. over SSH), which never go through `web_config.py` and so never trigger the MQTT publish. Neither alone would cover both workflows.
+
+## 16. Related documents
 
 - [specifications.md](specifications.md) — what the system does
 - [architecture.md](architecture.md) — how it's structured

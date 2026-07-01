@@ -7,7 +7,8 @@ import paho.mqtt.client as mqtt
 
 from config import (
     MQTT_ENABLED, MQTT_BROKER, MQTT_PORT, MQTT_USERNAME, MQTT_PASSWORD,
-    MQTT_TOPIC_REFRESH, MQTT_TOPIC_STATUS, refresh_requested,
+    MQTT_TOPIC_REFRESH, MQTT_TOPIC_STATUS, MQTT_TOPIC_CONFIG_RELOAD,
+    refresh_requested, config_reload_requested,
 )
 
 
@@ -52,6 +53,8 @@ class MQTTClient:
             logging.info("Connected to MQTT broker")
             client.subscribe(MQTT_TOPIC_REFRESH)
             logging.info(f"Subscribed to topic: {MQTT_TOPIC_REFRESH}")
+            client.subscribe(MQTT_TOPIC_CONFIG_RELOAD)
+            logging.info(f"Subscribed to topic: {MQTT_TOPIC_CONFIG_RELOAD}")
             self.publish_status("online")
         else:
             logging.error(f"Failed to connect to MQTT broker, return code: {rc}")
@@ -66,6 +69,10 @@ class MQTTClient:
                 logging.info("Manual refresh requested via MQTT")
                 refresh_requested.set()
                 self.publish_status("refreshing")
+
+        elif msg.topic == MQTT_TOPIC_CONFIG_RELOAD:
+            logging.info("Config reload requested via MQTT")
+            config_reload_requested.set()
 
     def on_disconnect(self, client, userdata, rc):
         """Callback when disconnected from MQTT broker."""

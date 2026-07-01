@@ -18,6 +18,12 @@
     </div>
 </div>
 
+
+<p class="helper-text" style="margin: 10px 0 20px;">
+    Fields marked <span class="badge badge-dynamic">applies live</span> take effect within moments of saving, no restart needed.
+    Everything else needs "Restart Service" above (or the config file's next-loop mtime check) to apply.
+</p>
+
 <form method="POST" action="{{ url_for('save_config') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% for category, fields in config_schema.items() %}

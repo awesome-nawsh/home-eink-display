@@ -6,10 +6,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=seanj
+User=pi
 Group=gpio
-ExecStart=/usr/bin/python3 /home/seanj/singapore-bus-timing-edisplay/app/web_config.py
-WorkingDirectory=/home/seanj/singapore-bus-timing-edisplay/app
+ExecStart=/usr/bin/python3 /home/pi/home-eink-display/app/web_config.py
+WorkingDirectory=/home/pi/home-eink-display/app
 StandardOutput=inherit
 StandardError=inherit
 Environment="PYTHONUNBUFFERED=1"

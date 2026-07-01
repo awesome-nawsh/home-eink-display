@@ -2,9 +2,15 @@
 
 Every other module imports from here (typically via ``from config import *``)
 rather than reading os.getenv() directly, so there is exactly one place that
-owns the process's configuration. Values are loaded once at import time —
-this module does not (yet) support reloading without a process restart; that
-is a Phase 4 concern (dynamic config reload), not part of this module split.
+owns the process's configuration. Values are loaded once at import time and
+generally require a process restart to pick up changes — except the small
+allowlist in DYNAMIC_CONFIG_VARS (currently just FORCE_SCREEN), which
+reload_dynamic_vars() can refresh live. See main.py's loop for how that's
+triggered (MQTT config_reload topic + a .env mtime-poll backstop). Retrofitting
+every variable to be dynamically reloadable would mean every read site across
+the codebase doing a dotted config.SOMEVAR lookup instead of a bare imported
+name — a large, invasive rewrite not worth it for variables nobody's asked to
+change without a restart (see design.md).
 """
 import sys
 import os
@@ -17,8 +23,10 @@ from scheduler import SCREEN_NAMES  # FORCE_SCREEN validation below; scheduler.p
                                      # no imports of its own, so this can't create a cycle.
 from secrets_vault import get_or_create_key, decrypt_value
 
-# Load environment variables first
-load_dotenv()
+# Explicit path (rather than load_dotenv()'s implicit cwd-upward search) so
+# reload_dynamic_vars() can re-read the exact same file later.
+ENV_FILE_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), '.env')
+load_dotenv(ENV_FILE_PATH)
 
 # Setting up directories
 picdir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'pic')
@@ -171,16 +179,45 @@ SCHEDULE_CONFIG_PATH = os.getenv(
 # (one of scheduler.SCREEN_NAMES, or unset/empty for normal resolution).
 # Intended for verifying a screen renders correctly on real hardware without
 # waiting for its schedule window or day-type to naturally occur — not meant
-# to be left set in production.
-_force_screen_raw = os.getenv('FORCE_SCREEN', '').strip()
-if _force_screen_raw and _force_screen_raw not in SCREEN_NAMES:
-    logging.warning(
-        f"FORCE_SCREEN={_force_screen_raw!r} is not a valid screen name "
-        f"({', '.join(SCREEN_NAMES)}) - ignoring, using normal schedule resolution"
-    )
-    FORCE_SCREEN = None
-else:
-    FORCE_SCREEN = _force_screen_raw or None
+# to be left set in production. This is the one variable in
+# DYNAMIC_CONFIG_VARS: main.py reads it via a dotted config.FORCE_SCREEN
+# lookup each loop tick (not a bare imported name) specifically so
+# reload_dynamic_vars() can update it live, without a process restart.
+def _resolve_force_screen(raw_value):
+    """Pure. Validates a raw FORCE_SCREEN string against scheduler.SCREEN_NAMES.
+    Returns the valid screen name, or None (unset/empty/invalid). Invalid
+    values are logged and treated as unset rather than raising, so a typo
+    in .env degrades to normal schedule resolution instead of crashing."""
+    raw_value = (raw_value or '').strip()
+    if not raw_value:
+        return None
+    if raw_value not in SCREEN_NAMES:
+        logging.warning(
+            f"FORCE_SCREEN={raw_value!r} is not a valid screen name "
+            f"({', '.join(SCREEN_NAMES)}) - ignoring, using normal schedule resolution"
+        )
+        return None
+    return raw_value
+
+
+FORCE_SCREEN = _resolve_force_screen(os.getenv('FORCE_SCREEN', ''))
+
+# Dynamic (no-restart) config reload — see module docstring. A small,
+# deliberate allowlist, not "everything" — see design.md for why.
+DYNAMIC_CONFIG_VARS = ('FORCE_SCREEN',)
+config_reload_requested = threading.Event()
+
+
+def reload_dynamic_vars():
+    """Re-reads .env and refreshes DYNAMIC_CONFIG_VARS in place (mutates this
+    module's own globals via `global`, so any dotted config.FORCE_SCREEN
+    lookup elsewhere sees the update immediately). Triggered by main.py on
+    the MQTT config_reload topic or a .env mtime change — see main.py's loop.
+    """
+    global FORCE_SCREEN
+    load_dotenv(ENV_FILE_PATH, override=True)
+    FORCE_SCREEN = _resolve_force_screen(os.getenv('FORCE_SCREEN', ''))
+    logging.info(f"Dynamic config reloaded: FORCE_SCREEN={FORCE_SCREEN}")
 
 # Boot-screen connectivity checklist
 BOOT_CHECK_TIMEOUT = float(os.getenv('BOOT_CHECK_TIMEOUT', '3'))
@@ -210,6 +247,7 @@ MQTT_USERNAME = os.getenv('MQTT_USERNAME', '')
 MQTT_PASSWORD = decrypt_value(os.getenv('MQTT_PASSWORD', ''), _secrets_key)
 MQTT_TOPIC_REFRESH = os.getenv('MQTT_TOPIC_REFRESH', 'eink/display/refresh')
 MQTT_TOPIC_STATUS = os.getenv('MQTT_TOPIC_STATUS', 'eink/display/status')
+MQTT_TOPIC_CONFIG_RELOAD = os.getenv('MQTT_TOPIC_CONFIG_RELOAD', 'eink/display/config_reload')
 
 # Cache duration
 CACHE_DURATION = int(os.getenv('CACHE_DURATION', '20'))

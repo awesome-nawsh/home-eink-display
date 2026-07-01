@@ -13,6 +13,7 @@ import atexit
 import signal
 from datetime import datetime
 
+import config
 from config import *
 from health import watchdog, system_health
 from fetchers import cache, fetch_data_parallel, http_session, get_day_type_sensors
@@ -26,6 +27,7 @@ from render.daytime_screen import display_daytime_screen
 from render.boot_screen import display_boot_checklist
 from scheduler import load_schedule_config, resolve_active_screen, get_next_wake_time
 from day_type import day_type_cache, resolve_todays_day_type
+from reload_watch import get_mtime, has_changed
 
 from waveshare_epd import epd7in5b_V2
 import pigpio  # GPIO backend used transitively by the waveshare driver; imported
@@ -94,6 +96,8 @@ def main():
 
         schedule = load_schedule_config(SCHEDULE_CONFIG_PATH, WAKE_HOUR, SLEEP_HOUR)
         logging.info(f"Schedule loaded: {schedule['screens']}")
+        schedule_mtime = get_mtime(SCHEDULE_CONFIG_PATH)
+        env_mtime = get_mtime(config.ENV_FILE_PATH)
 
         if FORCE_SCREEN:
             logging.warning(f"FORCE_SCREEN={FORCE_SCREEN} active - schedule/day-type resolution bypassed for testing")
@@ -140,6 +144,24 @@ def main():
                     epd.Clear()
                     is_epd_asleep = False
 
+            # Dynamic (no-restart) config reload — deliberately scoped to just
+            # the schedule and FORCE_SCREEN (config.DYNAMIC_CONFIG_VARS).
+            # Everything else still needs a real restart (Phase 3's
+            # /api/restart). The MQTT config_reload topic is the fast path;
+            # the mtime checks are the backstop for edits made directly on
+            # disk (e.g. over SSH) without going through the web UI.
+            schedule_changed, schedule_mtime = has_changed(SCHEDULE_CONFIG_PATH, schedule_mtime)
+            env_changed, env_mtime = has_changed(config.ENV_FILE_PATH, env_mtime)
+
+            if config_reload_requested.is_set() or env_changed:
+                config.reload_dynamic_vars()
+
+            if config_reload_requested.is_set() or schedule_changed:
+                schedule = load_schedule_config(SCHEDULE_CONFIG_PATH, WAKE_HOUR, SLEEP_HOUR)
+                logging.info(f"Schedule reloaded: {schedule['screens']}")
+
+            config_reload_requested.clear()
+
             if DEBUG_SKIP_TIME_CHECK:
                 if is_epd_asleep:
                     logging.info("DEBUG mode: Waking display")
@@ -162,8 +184,8 @@ def main():
                 time.sleep(WAKE_INTERVAL)
                 continue
 
-            if FORCE_SCREEN:
-                screen_name, schedule_warnings = FORCE_SCREEN, []
+            if config.FORCE_SCREEN:  # dotted access — sees live updates from reload_dynamic_vars()
+                screen_name, schedule_warnings = config.FORCE_SCREEN, []
             else:
                 day_type = resolve_todays_day_type(day_type_cache, get_day_type_sensors, DAY_TYPE_FALLBACK)
                 screen_name, schedule_warnings = resolve_active_screen(schedule, day_type, datetime.now())
