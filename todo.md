@@ -115,6 +115,13 @@ Code plan file) for the full design rationale behind each phase.
 ### Explicitly deferred
 - [ ] Login rate-limiting/lockout — single-admin LAN app, low risk, conscious skip
 
+## Web UI follow-ups (post-Phase-3, not yet scheduled to a phase)
+
+- [ ] Sort/categorize the Settings page fields better — current `CONFIG_SCHEMA` grouping is a
+      bit flat/arbitrary; group by how often a field actually needs touching, not just by subsystem
+- [ ] Move the LTA API URLs (`API_BUS_URL`, `API_TRAIN_URL`, `API_BUS_STOP_INFO_URL`) into an
+      "Advanced" section — these only need changing if LTA changes their API, not day-to-day config
+
 ## Phase 4 (not started)
 
 - [ ] Dynamic (no-restart) config reload: `Config.reload()`, restart-required vs. dynamic
