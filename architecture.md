@@ -33,7 +33,7 @@ Technical breakdown of how the system is put together. Companion to [specificati
 ## 2. Process & Deployment Topology
 
 - **Runtime**: single Python 3 process per service, no containers, no supervisor besides systemd.
-- **`bus_display.service`** (deployed to `/etc/systemd/system/`): runs `app/main.py` as user `seanj`, group `gpio`, with `SupplementaryGroups=gpio spi i2c` for hardware access. `Restart=on-failure`, `RestartSec=10` — this is the app's *only* self-healing mechanism (see [design.md](design.md) §Watchdog).
+- **`bus_display.service`** (deployed to `/etc/systemd/system/`): runs `app/main.py` as user `pi`, group `gpio`, with `SupplementaryGroups=gpio spi i2c` for hardware access. `Restart=on-failure`, `RestartSec=10` — this is the app's *only* self-healing mechanism (see [design.md](design.md) §Watchdog).
 - **`web_config.py`** has its own systemd unit, `systemd/web_config.service`, deployed the same way as `bus_display.service` (manual copy to `/etc/systemd/system/`, per `CLAUDE.md`). Its `/api/restart` endpoint needs a one-time sudoers entry (`systemd/bus_display_restart.sudoers.example`) to restart `bus_display` without a password.
 - **Dependencies**: Python packages via `pip` (`requirements.txt`); `pigpio`/`pigpiod` installed via `apt` (not pip-installable on Pi in a usable form) and must be running (`bus_display.service` has `Wants=pigpiod.service`, `After=pigpiod.service`).
 - **Fonts**: loaded at runtime from `pic/` (Atkinson Hyperlegible Next `.otf`, Material Design Icons `.ttf`) via absolute paths resolved from the script's own directory.

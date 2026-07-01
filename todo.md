@@ -4,8 +4,7 @@ Running checklist of planned work, grouped by phase. Crossed off as it lands;
 new items get added here (not just in commit messages) so this file stays the
 single place to look for "what's planned but not done yet."
 
-See `/Users/seanjmiller/.claude/plans/twinkly-wishing-platypus.md` (Claude
-Code plan file) for the full design rationale behind each phase.
+See `design.md` for the design rationale behind each phase.
 
 ## Phase 2 — Four-screen scheduler, day-type gating, boot checklist
 
@@ -139,3 +138,12 @@ Code plan file) for the full design rationale behind each phase.
 - [ ] Expanding `DYNAMIC_CONFIG_VARS` beyond `FORCE_SCREEN`/the schedule — would need more read
       sites converted to dotted `config.SOMEVAR` lookups; only worth it for a specific variable
       someone actually wants to change without a restart
+
+## Future features (not yet scheduled to a phase)
+
+- [ ] Weather fallback: `get_weather_from_homeassistant()` currently has no source at all if HA is
+      unreachable/not configured — add a fallback to a publicly available weather API (e.g.
+      Open-Meteo, free/no-key) so weather still shows without depending on Home Assistant.
+- [ ] Calendar integration: for users without Home Assistant, or who'd rather not route calendar
+      data through it, add a direct calendar integration (subscribe to a calendar `.ics` URL/feed)
+      as an alternative to (or in addition to) any future HA-based calendar display.

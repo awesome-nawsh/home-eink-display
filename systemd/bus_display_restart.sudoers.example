@@ -1,4 +1,4 @@
-# Grants the web config panel (running as user seanj) passwordless permission
+# Grants the web config panel (running as user pi) passwordless permission
 # to restart bus_display.service, so the "Restart Service" button in the web
 # UI works. Without this, /api/restart returns a permission-denied error.
 #
@@ -8,4 +8,4 @@
 #   sudo visudo -c   # validates syntax before it takes effect
 #
 # Adjust the username below if web_config.py runs as a different user.
-seanj ALL=(ALL) NOPASSWD: /bin/systemctl restart bus_display
+pi ALL=(ALL) NOPASSWD: /bin/systemctl restart bus_display

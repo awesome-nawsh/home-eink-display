@@ -538,7 +538,7 @@ A_HEADER=To School
 # See "Configuration Evolution" section above
 
 # Required font files in pic/ directory:
-cd /home/seanj/singapore-bus-timing-edisplay/pic/
+cd /home/pi/home-eink-display/pic/
 
 # Download Atkinson Hyperlegible Next fonts
 # (Download from Braille Institute or Google Fonts)

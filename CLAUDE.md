@@ -11,10 +11,10 @@ Setting this up from scratch? See [How-to.md](How-to.md) for the full step-by-st
 ---
 
 ## Hardware
-- Raspberry Pi Zero W (user: `seanj`, home: `/home/seanj/`)
+- Raspberry Pi Zero W (user: `pi`, home: `/home/pi/`)
 - Waveshare 7.5" e-ink display, B/W/R — driver: `epd7in5b_V2`
 - Connected via GPIO HAT (no soldering)
-- Pi path: `/home/seanj/singapore-bus-timing-edisplay/`
+- Pi path: `/home/pi/home-eink-display/`
 
 ---
 
@@ -71,8 +71,8 @@ git commit -m "your message"
 git push
 
 # 2. SSH to Pi and pull
-ssh seanj@<pi-ip>
-cd /home/seanj/singapore-bus-timing-edisplay
+ssh pi@<pi-ip>
+cd /home/pi/home-eink-display
 git pull
 
 # 3. Restart the service
