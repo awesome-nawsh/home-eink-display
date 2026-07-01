@@ -306,6 +306,46 @@
     border: 1px solid var(--border); border-radius: 5px; background: #fff; color: var(--text);
   }
   #ri-font-file { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* ---------- Screen tabs ---------- */
+  #screen-tabs {
+    display: flex; flex-direction: column; gap: 4px;
+    margin-bottom: 16px;
+  }
+  .screen-tab {
+    text-align: left; font-size: 13px; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: #fff; cursor: pointer; color: var(--text);
+  }
+  .screen-tab:hover { background: #f0efe9; }
+  .screen-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .screen-tab .kind {
+    display: block; font-size: 10.5px; opacity: 0.75; font-weight: 400; margin-top: 1px;
+  }
+
+  /* ---------- Sleep-screen panel ---------- */
+  #sleep-panel { display: none; }
+  #sleep-panel .btn { margin-bottom: 8px; }
+
+  /* ---------- Canvas image mode (sleep screen) ---------- */
+  #canvas.image-mode { background-image: none; background-color: #e8e7e1; }
+  #canvas.image-mode.has-image { background-color: transparent; }
+  #canvas-placeholder {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    text-align: center; padding: 40px;
+    color: var(--muted); font-size: 13px; line-height: 1.6;
+    border: 2px dashed var(--border);
+  }
+
+  /* ---------- Marquee multi-select ---------- */
+  #marquee-box {
+    position: absolute;
+    border: 1px solid var(--accent);
+    background: rgba(24,95,165,0.12);
+    pointer-events: none;
+    z-index: 70;
+  }
 </style>
 </head>
 <body>
@@ -314,6 +354,18 @@
   <h1>E-ink layout editor</h1>
   <div class="sub">800 × 480 — Waveshare 7.5&Prime; B/W/R</div>
 
+  <div id="screen-tabs" role="tablist" aria-label="Screen">
+    <button type="button" class="screen-tab active" data-screen="regular" onclick="switchScreen('regular')">
+      Regular display <span class="kind">display_combined_view() — bus/train/weather</span>
+    </button>
+    <button type="button" class="screen-tab" data-screen="boot" onclick="switchScreen('boot')">
+      Boot screen <span class="kind">main() startup, shown once</span>
+    </button>
+    <button type="button" class="screen-tab" data-screen="sleep" onclick="switchScreen('sleep')">
+      Sleep screen <span class="kind">display_sleep_screen() — HA dashboard image</span>
+    </button>
+  </div>
+
   <button class="btn primary" onclick="openExport()">Export coordinates</button>
   <button class="btn" onclick="resetLayout()">Reset to current code layout</button>
   <label class="btn" style="cursor:pointer;">
@@ -321,53 +373,74 @@
     <input type="file" id="load-file" accept="application/json" style="display:none;">
   </label>
 
-  <h2>Elements</h2>
-  <ul id="element-list"></ul>
+  <div id="elements-panel">
+    <h2>Elements</h2>
+    <ul id="element-list"></ul>
 
-  <div id="inspector">
-    <div id="inspector-empty">Select an element to edit its position and size.</div>
-    <div id="inspector-body" style="display:none;">
-      <div id="inspector-name"></div>
-      <div id="inspector-meta"></div>
-      <div class="row">
-        <div>
-          <label>x</label>
-          <input type="number" id="inp-x">
+    <div id="inspector">
+      <div id="inspector-empty">Select an element to edit its position and size.</div>
+      <div id="inspector-body" style="display:none;">
+        <div id="inspector-name"></div>
+        <div id="inspector-meta"></div>
+        <div class="row">
+          <div>
+            <label>x</label>
+            <input type="number" id="inp-x">
+          </div>
+          <div>
+            <label>y</label>
+            <input type="number" id="inp-y">
+          </div>
         </div>
-        <div>
-          <label>y</label>
-          <input type="number" id="inp-y">
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label>width</label>
-          <input type="number" id="inp-w">
-        </div>
-        <div>
-          <label>height</label>
-          <input type="number" id="inp-h">
+        <div class="row">
+          <div>
+            <label>width</label>
+            <input type="number" id="inp-w">
+          </div>
+          <div>
+            <label>height</label>
+            <input type="number" id="inp-h">
+          </div>
         </div>
       </div>
     </div>
+
+    <div id="hint">
+      Drag boxes to move, drag the bottom-right corner to resize. Shift/Cmd/Ctrl-click (canvas or list) to add/remove from the selection, or drag a box on empty canvas to marquee-select — drag any selected box to move the whole group together. Grid snaps to 5px. Boxes are colored by which image buffer they draw to (black vs red layer), matching the physical display. Dashed boxes are text/labels — their real footprint depends on rendered text, not the box size.
+    </div>
   </div>
 
-  <div id="hint">
-    Drag boxes to move, drag the bottom-right corner to resize. Grid snaps to 5px. Boxes are colored by which image buffer they draw to (black vs red layer), matching the physical display. Dashed boxes are text/labels — their real footprint depends on rendered text, not the box size.
+  <div id="sleep-panel">
+    <h2>Sleep screen</h2>
+    <div class="ri-note" style="margin-bottom:12px;">
+      Not a coordinate layout. Outside the wake window, <code>display_sleep_screen()</code> fetches a full-canvas screenshot of your Home Assistant dashboard (via a Puppeteer add-on), converts it to grayscale, and pushes it straight to the black buffer. The red buffer stays blank white — there's nothing to position or recolor here.
+    </div>
+    <label class="btn" style="cursor:pointer;">
+      Upload a preview image
+      <input type="file" id="sleep-image-input" accept="image/*" style="display:none;">
+    </label>
+    <button class="btn" onclick="clearSleepImage()">Clear preview image</button>
+    <h2>Driven by (.env)</h2>
+    <div class="ri-note">
+      <code>SLEEP_SCREEN_DASHBOARD</code> — HA Lovelace view URL<br>
+      <code>SLEEP_SCREEN_EINK_MODE</code> — 2 = B/W/R viewport hint<br>
+      <code>SLEEP_SCREEN_ZOOM</code>, <code>SLEEP_SCREEN_WAIT</code> — render zoom / delay (ms)<br>
+      <code>SLEEP_SCREEN_THEME</code> — HA theme activated before capture
+    </div>
   </div>
 </div>
 
 <div id="canvas-area">
   <div id="canvas-toolbar">
-    <label><input type="checkbox" id="snap-toggle" checked onchange="toggleSnap()"> Snap to 5px grid</label>
+    <label id="snap-toggle-label"><input type="checkbox" id="snap-toggle" checked onchange="toggleSnap()"> Snap to 5px grid</label>
     <div id="layer-toggle" role="group" aria-label="Layer view">
       <button type="button" data-mode="black" onclick="setLayerMode('black')">Black only</button>
       <button type="button" data-mode="red" onclick="setLayerMode('red')">Red only</button>
       <button type="button" data-mode="both" class="active" onclick="setLayerMode('both')">Both (red behind)</button>
     </div>
     <div id="sim-toggle-wrap">
-      <label><input type="checkbox" id="sim-toggle" checked onchange="toggleSimMode()"> Simulated preview</label>
-      <label><input type="checkbox" id="disruption-toggle" onchange="toggleDisruption()"> Simulate train disruption</label>
+      <label id="sim-toggle-label"><input type="checkbox" id="sim-toggle" checked onchange="toggleSimMode()"> Simulated preview</label>
+      <label id="disruption-toggle-label"><input type="checkbox" id="disruption-toggle" onchange="toggleDisruption()"> Simulate train disruption</label>
     </div>
   </div>
   <div id="canvas-wrap">
@@ -474,10 +547,12 @@ const SIM = {
     alert: "Free bridging buses available at affected stations.",
   },
   weather: { temp: 29, condition: "Partly Cloudy", humidity: 68 },
+  bootTime: "07:00 on 01 Jul 2026",
 };
 
 const SIM_ICONS = {
   bus_marker_icon: "bus-marker",
+  boot_icon: "bus-marker",
   mqtt_icon: "home-automation",
   train_header_icon: "subway",
   weather_icon: "weather-partly-cloudy",
@@ -516,7 +591,12 @@ function iconHtml(name, sizePx, color) {
 function renderSimBody(el) {
   switch (el.id) {
     case "bus_marker_icon":
-      return iconHtml(SIM_ICONS.bus_marker_icon, el.font.size, "#000");
+    case "boot_icon":
+      return iconHtml(SIM_ICONS[el.id], el.font.size, "#000");
+    case "boot_title":
+      return `<div style="${fontCss(el.font, "#111")}">System Starting...</div>`;
+    case "boot_time_text":
+      return `<div style="${fontCss(el.font, "#a32d2d")}">Booted: ${SIM.bootTime}</div>`;
     case "mqtt_icon":
       return iconHtml(SIM_ICONS.mqtt_icon, el.font.size, "#a32d2d");
     case "timestamp":
@@ -753,12 +833,55 @@ const DEFAULT_ELEMENTS = [
     fillNote: "MDI.WATER_PERCENT icon (red, size 18) followed immediately by '{humidity}%' text (red, Regular 14) 23px to the right." },
 ];
 
-const GROUP_ORDER = ["Header", "Structure", "Bus column", "Train column", "Weather", "Footer"];
+/* ---------------------------------------------------------------------
+   Boot screen — shown once at process startup (main(), lines 1508-1518),
+   unless DEBUG_SKIP_TIME_CHECK is set (in which case the debug screen
+   shows instead — not modeled here). Uses the same header icon position
+   as the regular display.
+--------------------------------------------------------------------- */
+const BOOT_ELEMENTS = [
+  { id: "boot_icon", label: "Bus marker icon", group: "Boot screen",
+    x: 15, y: 5, w: 50, h: 50, color: "black", type: "icon",
+    note: "MDI.BUS_MARKER at (HEADER_ICON_X, HEADER_ICON_Y), size HEADER_ICON_SIZE (50). Same position as the regular display's header icon. Line 1512.",
+    source: { func: "main()", lines: "1512" },
+    font: { ...FONTS.icon, size: 50, align: "left" } },
 
+  { id: "boot_title", label: "'System Starting...' text", group: "Boot screen",
+    x: 85, y: 18, w: 260, h: 30, color: "black", type: "text",
+    note: "(85, HEADER_TEXT_Y), bold FONT_LARGE (24). Line 1514.",
+    source: { func: "main()", lines: "1514" },
+    font: { ...FONTS.bold, size: 24, align: "left" } },
+
+  { id: "boot_time_text", label: "'Booted: {time}' text", group: "Boot screen",
+    x: 300, y: 240, w: 220, h: 26, color: "red", type: "text",
+    note: "(COLUMN_OFFSET-100, SCREEN_HEIGHT//2) = (300, 240), Regular FONT_TIMESTAMP (18). Format: '%H:%M on %d %b %Y'. Line 1516.",
+    source: { func: "main()", lines: "1516" },
+    font: { ...FONTS.regular, size: 18, align: "left" } },
+];
+
+/* ---------------------------------------------------------------------
+   Screen registry. "elements" screens are modeled with draggable/
+   resizable boxes like the regular display; "image" screens (sleep
+   screen) have no coordinates to edit — display_sleep_screen() pushes
+   an externally-fetched image straight to the black buffer, so the
+   previewer instead lets you upload a sample image and see it
+   grayscale-converted the way the real pipeline would render it.
+--------------------------------------------------------------------- */
+const SCREENS = {
+  regular: { label: "Regular display", kind: "elements", elements: DEFAULT_ELEMENTS },
+  boot: { label: "Boot screen", kind: "elements", elements: BOOT_ELEMENTS },
+  sleep: { label: "Sleep screen", kind: "image", elements: [] },
+};
+
+const GROUP_ORDER = ["Header", "Structure", "Bus column", "Train column", "Weather", "Footer", "Boot screen"];
+
+let activeScreen = "regular";
+let screenElements = {};
 let elements = [];
-let selectedId = null;
+let selectedIds = [];
 let snapEnabled = true;
 let layerMode = "both";
+let sleepImageDataUrl = null;
 
 function setLayerMode(mode) {
   layerMode = mode;
@@ -766,8 +889,35 @@ function setLayerMode(mode) {
   buildCanvas();
 }
 
-function cloneDefaults() {
-  return DEFAULT_ELEMENTS.map(e => ({ ...e, visible: true }));
+function cloneDefaultsFor(screenId) {
+  return SCREENS[screenId].elements.map(e => ({ ...e, visible: true }));
+}
+
+function switchScreen(id) {
+  if (id === activeScreen) return;
+  if (SCREENS[activeScreen].kind === "elements") screenElements[activeScreen] = elements;
+
+  activeScreen = id;
+  document.querySelectorAll(".screen-tab").forEach(b => b.classList.toggle("active", b.dataset.screen === id));
+
+  const isElementsScreen = SCREENS[id].kind === "elements";
+  document.getElementById("elements-panel").style.display = isElementsScreen ? "block" : "none";
+  document.getElementById("sleep-panel").style.display = isElementsScreen ? "none" : "block";
+  document.getElementById("canvas").classList.toggle("image-mode", !isElementsScreen);
+  document.getElementById("snap-toggle-label").style.display = isElementsScreen ? "" : "none";
+  document.getElementById("disruption-toggle-label").style.display = id === "regular" ? "" : "none";
+
+  if (isElementsScreen) {
+    elements = screenElements[id] || (screenElements[id] = cloneDefaultsFor(id));
+  } else {
+    elements = [];
+  }
+
+  selectedIds = [];
+  closeRightInspector();
+  buildCanvas();
+  buildList();
+  updateInspector();
 }
 
 function snap(v) {
@@ -777,6 +927,12 @@ function snap(v) {
 function buildCanvas() {
   const canvas = document.getElementById("canvas");
   canvas.innerHTML = "";
+
+  if (SCREENS[activeScreen].kind === "image") {
+    buildImageCanvas(canvas);
+    return;
+  }
+
   // Stable sort: red elements first (painted behind), black elements after
   // (painted on top) — mirrors the physical display where the black layer
   // sits over the red layer when both are shown together.
@@ -822,6 +978,71 @@ function buildCanvas() {
   refreshSelectionVisual();
 }
 
+function buildImageCanvas(canvas) {
+  // The physical pipeline only ever writes to the black buffer for this
+  // screen — in "Red only" mode there is genuinely nothing to show.
+  const showImage = layerMode !== "red";
+
+  if (showImage && sleepImageDataUrl) {
+    canvas.classList.add("has-image");
+    canvas.style.backgroundImage = `url(${sleepImageDataUrl})`;
+    canvas.style.backgroundSize = "cover";
+    canvas.style.backgroundPosition = "center";
+  } else {
+    canvas.classList.remove("has-image");
+    canvas.style.backgroundImage = "none";
+    const placeholder = document.createElement("div");
+    placeholder.id = "canvas-placeholder";
+    placeholder.textContent = !showImage
+      ? "Red buffer stays blank for this screen — nothing to show in \"Red only\" mode."
+      : "Upload a preview image (sidebar) to see how a Home Assistant dashboard screenshot would look after grayscale conversion for the black buffer.";
+    canvas.appendChild(placeholder);
+  }
+}
+
+function toGrayscaleDataUrl(img, callback) {
+  const off = document.createElement("canvas");
+  off.width = 800;
+  off.height = 480;
+  const ctx = off.getContext("2d");
+  const scale = Math.max(800 / img.width, 480 / img.height);
+  const w = img.width * scale, h = img.height * scale;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, 800, 480);
+  ctx.drawImage(img, (800 - w) / 2, (480 - h) / 2, w, h);
+  const imgData = ctx.getImageData(0, 0, 800, 480);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    d[i] = d[i + 1] = d[i + 2] = gray;
+  }
+  ctx.putImageData(imgData, 0, 0);
+  callback(off.toDataURL());
+}
+
+document.getElementById("sleep-image-input").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const img = new Image();
+    img.onload = () => {
+      toGrayscaleDataUrl(img, (dataUrl) => {
+        sleepImageDataUrl = dataUrl;
+        buildCanvas();
+      });
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = "";
+});
+
+function clearSleepImage() {
+  sleepImageDataUrl = null;
+  buildCanvas();
+}
+
 function buildList() {
   const list = document.getElementById("element-list");
   list.innerHTML = "";
@@ -836,7 +1057,7 @@ function buildList() {
     groupEls.forEach(el => {
       const li = document.createElement("li");
       li.dataset.id = el.id;
-      if (el.id === selectedId) li.classList.add("selected");
+      if (selectedIds.includes(el.id)) li.classList.add("selected");
       const sw = document.createElement("div");
       sw.className = "swatch";
       sw.style.background = el.color === "red" ? "#a32d2d" : "#000";
@@ -855,19 +1076,23 @@ function buildList() {
         buildList();
       };
       li.appendChild(vis);
-      li.onclick = () => selectElement(el.id);
+      li.onclick = (e) => selectElement(el.id, e.shiftKey || e.metaKey || e.ctrlKey);
       list.appendChild(li);
     });
   });
 }
 
-function selectElement(id) {
-  selectedId = id;
+function selectElement(id, additive) {
+  if (additive) {
+    selectedIds = selectedIds.includes(id) ? selectedIds.filter(x => x !== id) : [...selectedIds, id];
+  } else {
+    selectedIds = [id];
+  }
   refreshSelectionVisual();
   buildList();
   updateInspector();
   updateRightInspector();
-  openRightInspector();
+  if (selectedIds.length) openRightInspector(); else closeRightInspector();
 }
 
 function openRightInspector() {
@@ -878,7 +1103,23 @@ function closeRightInspector() {
 }
 
 function updateRightInspector() {
-  const el = elements.find(e => e.id === selectedId);
+  const fontSection = document.getElementById("ri-font-section");
+  const fillSection = document.getElementById("ri-fillnote-section");
+
+  if (selectedIds.length === 0) return;
+
+  if (selectedIds.length > 1) {
+    document.getElementById("ri-title").textContent = `${selectedIds.length} elements selected`;
+    document.getElementById("ri-group").textContent = "Drag any of them on canvas to move the group together.";
+    document.getElementById("ri-source").textContent = "—";
+    document.getElementById("ri-color-swatch").style.background = "transparent";
+    document.getElementById("ri-color-label").textContent = "Mixed — select a single element to see color/font detail.";
+    fontSection.style.display = "none";
+    fillSection.style.display = "none";
+    return;
+  }
+
+  const el = elements.find(e => e.id === selectedIds[0]);
   if (!el) return;
 
   document.getElementById("ri-title").textContent = el.label;
@@ -895,7 +1136,6 @@ function updateRightInspector() {
     ? "Red — drawn on the red image buffer (draw_r)"
     : "Black — drawn on the black image buffer (draw)";
 
-  const fontSection = document.getElementById("ri-font-section");
   if (el.font) {
     fontSection.style.display = "block";
     document.getElementById("ri-font-style-input").value = el.font.key || "regular";
@@ -906,7 +1146,6 @@ function updateRightInspector() {
     fontSection.style.display = "none";
   }
 
-  const fillSection = document.getElementById("ri-fillnote-section");
   if (el.fillNote) {
     fillSection.style.display = "block";
     document.getElementById("ri-fillnote").textContent = el.fillNote;
@@ -919,7 +1158,8 @@ function updateRightInspector() {
 }
 
 document.getElementById("ri-font-style-input").addEventListener("change", (e) => {
-  const el = elements.find(e => e.id === selectedId);
+  if (selectedIds.length !== 1) return;
+  const el = elements.find(e => e.id === selectedIds[0]);
   if (!el || !el.font) return;
   const preset = FONTS[e.target.value];
   el.font = { ...preset, size: el.font.size, align: el.font.align };
@@ -927,13 +1167,15 @@ document.getElementById("ri-font-style-input").addEventListener("change", (e) =>
   buildCanvas();
 });
 document.getElementById("ri-font-size-input").addEventListener("input", (e) => {
-  const el = elements.find(e => e.id === selectedId);
+  if (selectedIds.length !== 1) return;
+  const el = elements.find(e => e.id === selectedIds[0]);
   if (!el || !el.font) return;
   el.font.size = parseInt(e.target.value) || el.font.size;
   buildCanvas();
 });
 document.getElementById("ri-font-align-input").addEventListener("change", (e) => {
-  const el = elements.find(e => e.id === selectedId);
+  if (selectedIds.length !== 1) return;
+  const el = elements.find(e => e.id === selectedIds[0]);
   if (!el || !el.font) return;
   el.font.align = e.target.value;
   buildCanvas();
@@ -941,15 +1183,30 @@ document.getElementById("ri-font-align-input").addEventListener("change", (e) =>
 
 function refreshSelectionVisual() {
   document.querySelectorAll("#canvas .el").forEach(d => {
-    d.classList.toggle("selected", d.dataset.id === selectedId);
+    d.classList.toggle("selected", selectedIds.includes(d.dataset.id));
   });
 }
 
 function updateInspector() {
-  const el = elements.find(e => e.id === selectedId);
   const empty = document.getElementById("inspector-empty");
   const body = document.getElementById("inspector-body");
+
+  if (selectedIds.length === 0) {
+    empty.textContent = "Select an element to edit its position and size.";
+    empty.style.display = "block";
+    body.style.display = "none";
+    return;
+  }
+  if (selectedIds.length > 1) {
+    empty.textContent = `${selectedIds.length} elements selected — drag on canvas to move them together. Position/size fields edit one element at a time.`;
+    empty.style.display = "block";
+    body.style.display = "none";
+    return;
+  }
+
+  const el = elements.find(e => e.id === selectedIds[0]);
   if (!el) {
+    empty.textContent = "Select an element to edit its position and size.";
     empty.style.display = "block";
     body.style.display = "none";
     return;
@@ -966,7 +1223,8 @@ function updateInspector() {
 
 ["inp-x", "inp-y", "inp-w", "inp-h"].forEach(id => {
   document.getElementById(id).addEventListener("input", () => {
-    const el = elements.find(e => e.id === selectedId);
+    if (selectedIds.length !== 1) return;
+    const el = elements.find(e => e.id === selectedIds[0]);
     if (!el) return;
     el.x = parseInt(document.getElementById("inp-x").value) || 0;
     el.y = parseInt(document.getElementById("inp-y").value) || 0;
@@ -980,11 +1238,40 @@ let dragState = null;
 
 function onElMouseDown(e, el, div, isResize) {
   e.preventDefault();
-  selectElement(el.id);
+  e.stopPropagation();
+
+  if (!isResize) {
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    const wasSelected = selectedIds.includes(el.id);
+    if (additive) {
+      selectedIds = wasSelected ? selectedIds.filter(id => id !== el.id) : [...selectedIds, el.id];
+    } else if (!wasSelected) {
+      // Plain click on an element outside the current selection replaces it.
+      // Plain click on an already-selected member of a multi-selection keeps
+      // the whole group selected, so it can be dragged together.
+      selectedIds = [el.id];
+    }
+  } else if (!selectedIds.includes(el.id)) {
+    // Resizing always targets a single element — make sure it's selected.
+    selectedIds = [el.id];
+  }
+  refreshSelectionVisual();
+  buildList();
+  updateInspector();
+  updateRightInspector();
+  if (selectedIds.length) openRightInspector(); else closeRightInspector();
+
+  const dragIds = isResize ? [el.id] : (selectedIds.includes(el.id) ? [...selectedIds] : [el.id]);
+  const origPositions = {};
+  dragIds.forEach(id => {
+    const target = elements.find(x => x.id === id);
+    if (target) origPositions[id] = { x: target.x, y: target.y };
+  });
+
   dragState = {
-    el, isResize,
+    el, isResize, dragIds, origPositions,
     startX: e.clientX, startY: e.clientY,
-    origX: el.x, origY: el.y, origW: el.w, origH: el.h,
+    origW: el.w, origH: el.h,
   };
   document.addEventListener("mousemove", onDragMove);
   document.addEventListener("mouseup", onDragEnd);
@@ -994,13 +1281,17 @@ function onDragMove(e) {
   if (!dragState) return;
   const dx = e.clientX - dragState.startX;
   const dy = e.clientY - dragState.startY;
-  const el = dragState.el;
   if (dragState.isResize) {
-    el.w = Math.max(4, snap(dragState.origW + dx));
-    el.h = Math.max(4, snap(dragState.origH + dy));
+    dragState.el.w = Math.max(4, snap(dragState.origW + dx));
+    dragState.el.h = Math.max(4, snap(dragState.origH + dy));
   } else {
-    el.x = Math.max(0, snap(dragState.origX + dx));
-    el.y = Math.max(0, snap(dragState.origY + dy));
+    dragState.dragIds.forEach(id => {
+      const target = elements.find(x => x.id === id);
+      const orig = dragState.origPositions[id];
+      if (!target || !orig) return;
+      target.x = Math.max(0, snap(orig.x + dx));
+      target.y = Math.max(0, snap(orig.y + dy));
+    });
   }
   buildCanvas();
   updateInspector();
@@ -1012,15 +1303,96 @@ function onDragEnd() {
   document.removeEventListener("mouseup", onDragEnd);
 }
 
+/* ---------------- Marquee (rubber-band) multi-select ---------------- */
+let marqueeState = null;
+
+document.getElementById("canvas").addEventListener("mousedown", (e) => {
+  const canvasEl = document.getElementById("canvas");
+  if (e.target !== canvasEl) return;
+  if (SCREENS[activeScreen].kind !== "elements") return;
+
+  const rect = canvasEl.getBoundingClientRect();
+  const startX = e.clientX - rect.left;
+  const startY = e.clientY - rect.top;
+  const box = document.createElement("div");
+  box.id = "marquee-box";
+  box.style.left = startX + "px";
+  box.style.top = startY + "px";
+  canvasEl.appendChild(box);
+
+  marqueeState = {
+    startX, startY, curX: startX, curY: startY,
+    additive: e.shiftKey || e.metaKey || e.ctrlKey,
+    moved: false, box,
+  };
+  document.addEventListener("mousemove", onMarqueeMove);
+  document.addEventListener("mouseup", onMarqueeEnd);
+});
+
+function onMarqueeMove(e) {
+  if (!marqueeState) return;
+  const rect = document.getElementById("canvas").getBoundingClientRect();
+  marqueeState.curX = e.clientX - rect.left;
+  marqueeState.curY = e.clientY - rect.top;
+  if (Math.abs(marqueeState.curX - marqueeState.startX) > 3 || Math.abs(marqueeState.curY - marqueeState.startY) > 3) {
+    marqueeState.moved = true;
+  }
+  const x1 = Math.min(marqueeState.startX, marqueeState.curX);
+  const y1 = Math.min(marqueeState.startY, marqueeState.curY);
+  const x2 = Math.max(marqueeState.startX, marqueeState.curX);
+  const y2 = Math.max(marqueeState.startY, marqueeState.curY);
+  marqueeState.box.style.left = x1 + "px";
+  marqueeState.box.style.top = y1 + "px";
+  marqueeState.box.style.width = (x2 - x1) + "px";
+  marqueeState.box.style.height = (y2 - y1) + "px";
+}
+
+function onMarqueeEnd() {
+  document.removeEventListener("mousemove", onMarqueeMove);
+  document.removeEventListener("mouseup", onMarqueeEnd);
+  if (!marqueeState) return;
+
+  const { startX, startY, curX, curY, additive, moved, box } = marqueeState;
+  box.remove();
+  marqueeState = null;
+
+  if (!moved) {
+    if (!additive) selectedIds = [];
+  } else {
+    const x1 = Math.min(startX, curX), x2 = Math.max(startX, curX);
+    const y1 = Math.min(startY, curY), y2 = Math.max(startY, curY);
+    const hitIds = elements
+      .filter(el => el.visible !== false && (layerMode === "both" || el.color === layerMode))
+      .filter(el => el.x < x2 && el.x + el.w > x1 && el.y < y2 && el.y + el.h > y1)
+      .map(el => el.id);
+    if (additive) {
+      hitIds.forEach(id => { if (!selectedIds.includes(id)) selectedIds.push(id); });
+    } else {
+      selectedIds = hitIds;
+    }
+  }
+
+  refreshSelectionVisual();
+  buildList();
+  updateInspector();
+  updateRightInspector();
+  if (selectedIds.length) openRightInspector(); else closeRightInspector();
+}
+
 function toggleSnap() {
   snapEnabled = document.getElementById("snap-toggle").checked;
   document.getElementById("canvas").classList.toggle("snap-off", !snapEnabled);
 }
 
 function resetLayout() {
-  if (!confirm("Discard current edits and reload the layout from the code as-reviewed?")) return;
-  elements = cloneDefaults();
-  selectedId = null;
+  if (SCREENS[activeScreen].kind !== "elements") {
+    clearSleepImage();
+    return;
+  }
+  if (!confirm(`Discard current edits to "${SCREENS[activeScreen].label}" and reload it from the code as-reviewed?`)) return;
+  elements = cloneDefaultsFor(activeScreen);
+  screenElements[activeScreen] = elements;
+  selectedIds = [];
   buildCanvas();
   buildList();
   updateInspector();
@@ -1028,6 +1400,11 @@ function resetLayout() {
 }
 
 document.getElementById("load-file").addEventListener("change", (e) => {
+  if (SCREENS[activeScreen].kind !== "elements") {
+    alert(`"${SCREENS[activeScreen].label}" has no coordinates to load — switch to a coordinate-based screen first.`);
+    e.target.value = "";
+    return;
+  }
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
@@ -1036,7 +1413,8 @@ document.getElementById("load-file").addEventListener("change", (e) => {
       const data = JSON.parse(reader.result);
       if (!Array.isArray(data)) throw new Error("not an array");
       elements = data.map(d => ({ ...d, visible: d.visible !== false }));
-      selectedId = null;
+      screenElements[activeScreen] = elements;
+      selectedIds = [];
       buildCanvas();
       buildList();
       updateInspector();
@@ -1063,12 +1441,18 @@ function switchExportTab(fmt) {
   ta.value = fmt === "json" ? exportJSON() : exportPython();
 }
 function exportJSON() {
+  if (SCREENS[activeScreen].kind !== "elements") {
+    return `// "${SCREENS[activeScreen].label}" has no coordinates — it's an externally-fetched image, not a drawn layout. Switch to a coordinate-based screen to export.`;
+  }
   return JSON.stringify(elements.map(({ id, label, group, x, y, w, h, color, type, note, visible, font, source, fillNote }) =>
     ({ id, label, group, x, y, w, h, color, type, note, visible, font, source, fillNote })), null, 2);
 }
 function exportPython() {
+  if (SCREENS[activeScreen].kind !== "elements") {
+    return `# "${SCREENS[activeScreen].label}" has no coordinates to export — display_sleep_screen()\n# pushes an externally-fetched, grayscale-converted image straight to the\n# black buffer with no draw calls. Switch to a coordinate-based screen to export.`;
+  }
   const lines = [];
-  lines.push("# Coordinates exported from tools/layout_editor.html");
+  lines.push(`# Coordinates exported from tools/layout_editor.html — screen: ${SCREENS[activeScreen].label}`);
   lines.push("# Paste these values into app/main.py at the referenced line numbers.");
   lines.push("# Box-derived coords only — text/label boxes are visual placeholders for");
   lines.push("# where the string starts drawing; PIL still auto-sizes the rendered text.");
@@ -1105,7 +1489,8 @@ function copyExport() {
 }
 
 /* ---------------- Init ---------------- */
-elements = cloneDefaults();
+elements = cloneDefaultsFor("regular");
+screenElements.regular = elements;
 document.getElementById("canvas").classList.toggle("sim-mode", simMode);
 buildCanvas();
 buildList();

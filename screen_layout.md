@@ -206,15 +206,17 @@ These replace the entire screen rather than composing with the layout above.
 
 ## 5. Design tooling
 
-`tools/layout_editor.html` is a standalone, dependency-free HTML/JS tool that mirrors section 3 of this document visually:
+`tools/layout_editor.html` is a standalone, dependency-free HTML/JS tool that mirrors sections 3-4 of this document visually, with a screen switcher covering all three states the app actually renders through coordinates or images:
 
-- Canvas sized exactly 800×480 with a 5px-snap grid.
-- One draggable/resizable box per element in the table above, tagged with its source function + line range, color, and font (family/style/size/alignment) — editable live.
-- Black/Red/Both layer toggle to preview each buffer independently or composited (black painted over red, matching the physical panel).
-- Simulated-preview mode renders realistic fake content (sample bus numbers, load bars, weather, train status) using the actual fonts (Atkinson Hyperlegible Next + Material Design Icons, loaded from CDN for preview purposes only) instead of abstract placeholder boxes.
-- Export to JSON (round-trippable) or annotated Python-coordinate comments, for hand-porting changes back into `main.py`'s draw functions.
+- **Regular display** tab — mirrors §3 in full: one draggable/resizable box per element, tagged with its source function + line range, color, and font (family/style/size/alignment) — editable live.
+- **Boot screen** tab — mirrors §4's boot screen row: the header icon, `"System Starting..."` text, and the red `"Booted: {time}"` text, same editing model as the regular display.
+- **Sleep screen** tab — §4's sleep screen has no coordinates (it's an externally-fetched image, not a drawn layout), so this tab instead lets you upload a sample image and see it converted to grayscale exactly as `display_sleep_screen()` would render it to the black buffer (canvas-scaled to 800×480, luminance-weighted grayscale). The red-buffer note and `SLEEP_SCREEN_*` env vars are documented alongside it. The debug screen (§4) isn't modeled — it's a dev-only env-var dump, not a layout worth prototyping visually.
+- Canvas sized exactly 800×480 with a 5px-snap grid (element screens only).
+- Black/Red/Both layer toggle to preview each buffer independently or composited (black painted over red, matching the physical panel) — on the sleep screen this correctly shows nothing in "Red only" mode, since that buffer is always blank for that screen.
+- Simulated-preview mode renders realistic fake content (sample bus numbers, load bars, weather, train status, boot time) using the actual fonts (Atkinson Hyperlegible Next + Material Design Icons, loaded from CDN for preview purposes only) instead of abstract placeholder boxes.
+- Export to JSON (round-trippable) or annotated Python-coordinate comments, for hand-porting changes back into `main.py`'s draw functions — scoped to whichever screen tab is active.
 
-Use it to prototype layout changes before editing `main.py` — then update this document's tables to match whatever you land on.
+Each element/image screen keeps its own edit state independently, so you can switch tabs without losing in-progress changes. Use it to prototype layout changes before editing `main.py` — then update this document's tables to match whatever you land on.
 
 ## 6. Related documents
 
