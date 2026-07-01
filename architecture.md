@@ -28,7 +28,7 @@ Technical breakdown of how the system is put together. Companion to [specificati
                      └─────────────────────────────────────────────┘
 ```
 
-`app/main.py` is a single long-running process, started and supervised by systemd. It owns the render loop, all API calls, MQTT, and direct hardware access to the e-ink panel via `lib/waveshare_epd/epd7in5b_V2.py`. `app/web_config.py` is a separate, optional Flask process — it only reads/writes the `.env` file and can trigger a restart of the main service; it holds no runtime state of its own and does not talk to the display directly.
+`app/main.py` is a single long-running process, started and supervised by systemd. It's the entry point for one process that owns the render loop, all API calls, MQTT, and direct hardware access to the e-ink panel via `lib/waveshare_epd/epd7in5b_V2.py` — as of the v14 module split, `main.py` itself is thin orchestration only, importing config/fetching/rendering logic from sibling modules (§3). `app/web_config.py` is a separate, optional Flask process — it only reads/writes the `.env` file and can trigger a restart of the main service; it holds no runtime state of its own and does not talk to the display directly.
 
 ## 2. Process & Deployment Topology
 
@@ -41,29 +41,39 @@ Technical breakdown of how the system is put together. Companion to [specificati
 
 ## 3. Module Layout
 
+`app/main.py` was originally a single ~1600-line file (design.md §2 flagged this as expected to change once the file outgrew a single-file design). As of the v14 rewrite's Phase 1, it's split into focused modules — a pure relocation with no behavior change; every module below still does exactly what it did as part of the old monolith.
+
 | Path | Role |
 |---|---|
-| `app/main.py` | Everything: config loading, API clients, caching, rendering, MQTT, main loop. ~1580 lines, monolithic by design (see design.md). |
-| `app/web_config.py` | Standalone Flask app to edit `.env` from a browser (`CONFIG_SCHEMA` dict drives an auto-generated form; reads `SystemHealth`-shaped status conceptually but does not share process memory with `main.py`). |
+| `app/main.py` | Entry point / orchestration only: startup validation, hardware init, the boot screen, and the main wake/sleep/fetch/render loop. Imports everything else. |
+| `app/config.py` | All environment variable loading and layout constants (`SCREEN_WIDTH`/`SCREEN_HEIGHT`/`COLUMN_OFFSET` and everything derived from them), `validate_configuration()`, the `refresh_requested` event, `boot_timestamp`. Every other module imports from here — the single source of truth for configuration. |
+| `app/health.py` | `Watchdog` (stuck-loop detection) and `SystemHealth` (API-call/display-update counters, periodic stats logging), plus their module-level singleton instances. |
+| `app/fetchers.py` | The shared `http_session` (retrying `requests.Session`), `DataCache`, `BackoffManager`, and every data-fetch function: `get_bus_arrival`, `get_train_disruptions`, `get_weather_from_homeassistant`, `get_bus_stop_coordinates`, the OneMap/Google journey-time calculators, and `fetch_data_parallel()`. |
+| `app/mqtt_client.py` | `MQTTClient` only — instantiated inside `main()`, not a module-level singleton (matches pre-split behavior). |
+| `app/render/common.py` | Shared rendering primitives: `MDI` icon glyph table, font loaders (`get_font`/`get_font_bold`/`get_icon_font`), `DisplayManager`, `draw_mdi_icon`, `get_weather_icon`. |
+| `app/render/bus_train.py` | The "awake" screen: `draw_bus_section`, `draw_train_section`, `draw_weather_section_right`, `draw_timestamp`, `display_combined_view`. |
+| `app/render/sleep_screen.py` | `display_sleep_screen()` — fetches and displays the external HA dashboard screenshot outside the wake window. Named `sleep_screen` (not yet `daytime`) deliberately — that rename is a later-phase concept change, not part of the Phase 1 relocation. |
+| `app/render/debug_screen.py` | `display_debug_screen()` — dev-only env-var dump shown at boot when `DEBUG_SKIP_TIME_CHECK=true`. |
+| `app/web_config.py` | Standalone Flask app to edit `.env` from a browser (`CONFIG_SCHEMA` dict drives an auto-generated form; reads `SystemHealth`-shaped status conceptually but does not share process memory with `main.py`). Untouched by the Phase 1 module split. |
 | `lib/waveshare_epd/` | Vendored Waveshare display drivers; only `epd7in5b_V2.py` + `epdconfig.py` are live. |
 | `pic/` | Fonts loaded by PIL at runtime. |
-| `systemd/bus_display.service` | Deployed unit file for the main process. |
+| `systemd/bus_display.service` | Deployed unit file for the main process — `ExecStart` still points at `app/main.py`, unaffected by the module split since the entry point's path didn't change. |
 | `tools/layout_editor.html` | Standalone HTML/JS tool (no build step) for visually mocking up and exporting the on-screen layout — not deployed to the Pi, dev-only. |
 
-## 4. Runtime Components (inside `main.py`)
+## 4. Runtime Components
 
 ### 4.1 Singletons (module scope)
-Instantiated once at import time and shared across the whole process:
+Instantiated once at import time and shared across the whole process (each still lives in the module identified in §3's table):
 
-| Singleton | Type | Role |
-|---|---|---|
-| `http_session` | `requests.Session` | Shared HTTP client with urllib3-level retry (3x, 500/502/503/504, backoff 0.5) |
-| `watchdog` | `Watchdog` | Detects a hung main loop (300s without a `feed()`) |
-| `backoff_manager` | `BackoffManager` | Per-API-key exponential backoff gate before attempting a live fetch |
-| `system_health` | `SystemHealth` | Counters for API calls/errors, display updates, uptime; periodic log line every 10 loop iterations |
-| `cache` | `DataCache` | In-memory TTL cache for bus/train/weather/journey-time responses (process-lifetime only, no persistence) |
-| `mqtt_client` | `MQTTClient` | Created inside `main()`; wraps paho-mqtt, runs its network loop on a background daemon thread |
-| `refresh_requested` | `threading.Event` | Cross-thread signal: MQTT callback thread → main loop thread |
+| Singleton | Type | Module | Role |
+|---|---|---|---|
+| `http_session` | `requests.Session` | `fetchers.py` | Shared HTTP client with urllib3-level retry (3x, 500/502/503/504, backoff 0.5) |
+| `watchdog` | `Watchdog` | `health.py` | Detects a hung main loop (300s without a `feed()`) |
+| `backoff_manager` | `BackoffManager` | `fetchers.py` | Per-API-key exponential backoff gate before attempting a live fetch |
+| `system_health` | `SystemHealth` | `health.py` | Counters for API calls/errors, display updates, uptime; periodic log line every 10 loop iterations |
+| `cache` | `DataCache` | `fetchers.py` | In-memory TTL cache for bus/train/weather/journey-time responses (process-lifetime only, no persistence) |
+| `mqtt_client` | `MQTTClient` | `main.py` (class defined in `mqtt_client.py`) | Created inside `main()`; wraps paho-mqtt, runs its network loop on a background daemon thread |
+| `refresh_requested` | `threading.Event` | `config.py` | Cross-thread signal: MQTT callback thread → main loop thread |
 
 ### 4.2 Data-fetch layer
 - `get_bus_arrival()`, `get_train_disruptions()`, `get_weather_from_homeassistant()` — each follows the same pattern: check backoff → check cache → live HTTP fetch → update cache + reset backoff on success, or fall back to stale cache + record backoff failure on error.
