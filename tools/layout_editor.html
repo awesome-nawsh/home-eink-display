@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>E-Ink Display Layout Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
+<style>
+  :root {
+    --bg: #f4f3ef;
+    --panel: #ffffff;
+    --border: #d8d6cd;
+    --text: #2c2c2a;
+    --muted: #6b6a63;
+    --accent: #185fa5;
+    --red: #a32d2d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ---------- Sidebar ---------- */
+  #sidebar {
+    width: 300px;
+    flex-shrink: 0;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 16px;
+    overflow-y: auto;
+  }
+  #sidebar h1 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+  #sidebar .sub { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+  #sidebar h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 18px 0 8px; }
+
+  .btn {
+    display: inline-block;
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 13px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    margin-bottom: 6px;
+    color: var(--text);
+    text-align: center;
+  }
+  .btn:hover { background: #f0efe9; }
+  .btn.primary { background: var(--accent); color: white; border-color: var(--accent); }
+  .btn.primary:hover { background: #12507f; }
+
+  #element-list { list-style: none; margin: 0; padding: 0; }
+  #element-list li {
+    padding: 7px 8px;
+    font-size: 12.5px;
+    border-radius: 5px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid transparent;
+  }
+  #element-list li:hover { background: #f0efe9; }
+  #element-list li.selected { background: #e6f1fb; border-color: var(--accent); }
+  #element-list li .swatch {
+    width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0;
+  }
+  #element-list li .lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #element-list li .vis-toggle { font-size: 11px; color: var(--muted); cursor: pointer; }
+
+  #inspector { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
+  #inspector .row { display: flex; gap: 8px; margin-bottom: 8px; }
+  #inspector label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 2px; }
+  #inspector input[type=number] {
+    width: 100%; padding: 5px 6px; font-size: 12.5px;
+    border: 1px solid var(--border); border-radius: 5px;
+  }
+  #inspector-name { font-size: 13px; font-weight: 600; margin-bottom: 8px; word-break: break-word; }
+  #inspector-meta { font-size: 11.5px; color: var(--muted); margin-bottom: 10px; line-height: 1.5; }
+  #inspector-empty { font-size: 12.5px; color: var(--muted); padding: 8px 0; }
+
+  /* ---------- Canvas area ---------- */
+  #canvas-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    overflow: auto;
+    position: relative;
+  }
+  #canvas-toolbar {
+    position: absolute;
+    top: 16px;
+    left: 24px;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  #layer-toggle { display: flex; gap: 4px; }
+  #layer-toggle button {
+    font-size: 11px; padding: 5px 10px; border-radius: 5px;
+    border: 1px solid var(--border); background: #fff; cursor: pointer;
+    color: var(--muted);
+  }
+  #layer-toggle button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #sim-toggle-wrap { display: flex; align-items: center; gap: 14px; }
+  #canvas-wrap {
+    position: relative;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+    border: 1px solid #999;
+  }
+  #canvas {
+    position: relative;
+    width: 800px;
+    height: 480px;
+    background: #fdfdfa;
+    background-image:
+      linear-gradient(to right, rgba(0,0,0,0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0,0,0,0.05) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  #canvas.snap-off { background-image: none; }
+
+  .el {
+    position: absolute;
+    border: 1px solid rgba(0,0,0,0.35);
+    cursor: move;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    font-size: 11px;
+    overflow: hidden;
+    user-select: none;
+  }
+  .el .tag {
+    position: absolute;
+    top: 1px; left: 3px;
+    font-size: 9px;
+    opacity: 0.75;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .el.selected { outline: 2px solid var(--accent); outline-offset: -1px; z-index: 50; }
+  .el.hidden-el { display: none; }
+
+  .el.color-black { background: rgba(0,0,0,0.85); color: #fff; }
+  .el.color-black.line-type { background: rgba(0,0,0,0.9); }
+  .el.color-black.text-type { background: rgba(0,0,0,0.08); color: #111; border-style: dashed; }
+  .el.color-black.icon-type { background: rgba(0,0,0,0.55); color: #fff; }
+
+  .el.color-red { background: rgba(163,45,45,0.85); color: #fff; }
+  .el.color-red.line-type { background: rgba(163,45,45,0.9); }
+  .el.color-red.text-type { background: rgba(163,45,45,0.12); color: #7a1f1f; border-style: dashed; }
+  .el.color-red.icon-type { background: rgba(163,45,45,0.55); color: #fff; }
+
+  /* ---------- Simulated preview mode ---------- */
+  #canvas.sim-mode .el.text-type,
+  #canvas.sim-mode .el.icon-type {
+    background: transparent;
+    border-color: transparent;
+  }
+  #canvas.sim-mode .el.text-type:hover,
+  #canvas.sim-mode .el.icon-type:hover {
+    border-color: rgba(24,95,165,0.35);
+  }
+  #canvas.sim-mode .el.rect-type.color-black { background: #000; border-color: #000; }
+  #canvas.sim-mode .el .tag { display: none; }
+  .sim-body {
+    width: 100%; height: 100%;
+    display: flex; align-items: center;
+    overflow: hidden;
+    font-family: 'Atkinson Hyperlegible Next', sans-serif;
+    line-height: 1.3;
+  }
+  .sim-body.align-left { justify-content: flex-start; }
+  .sim-body.align-center { justify-content: center; }
+  .sim-body.align-right { justify-content: flex-end; }
+  .sim-companion {
+    position: absolute;
+    pointer-events: none;
+    white-space: nowrap;
+    font-family: 'Atkinson Hyperlegible Next', sans-serif;
+    z-index: 5;
+  }
+
+  .handle {
+    position: absolute;
+    width: 9px; height: 9px;
+    background: var(--accent);
+    border: 1px solid white;
+    right: -5px; bottom: -5px;
+    cursor: nwse-resize;
+    z-index: 60;
+  }
+
+  #export-modal {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4);
+    align-items: center; justify-content: center;
+    z-index: 200;
+  }
+  #export-modal.open { display: flex; }
+  #export-box {
+    background: var(--panel);
+    width: 640px;
+    max-height: 80vh;
+    border-radius: 10px;
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+  }
+  #export-box h3 { margin: 0 0 10px; font-size: 15px; }
+  #export-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+  #export-tabs button {
+    font-size: 12px; padding: 5px 10px; border-radius: 5px;
+    border: 1px solid var(--border); background: #fff; cursor: pointer;
+  }
+  #export-tabs button.active { background: var(--accent); color: white; border-color: var(--accent); }
+  #export-text {
+    flex: 1; min-height: 320px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11.5px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fafaf6;
+    white-space: pre;
+    overflow: auto;
+    resize: none;
+  }
+  #export-actions { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; }
+  #export-actions .btn { width: auto; padding: 8px 14px; }
+
+  #hint {
+    font-size: 11px; color: var(--muted); margin-top: 14px; line-height: 1.5;
+  }
+
+  /* ---------- Right inspector drawer ---------- */
+  #right-inspector {
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    width: 320px;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    box-shadow: -3px 0 10px rgba(0,0,0,0.08);
+    transform: translateX(100%);
+    transition: transform 0.18s ease;
+    z-index: 150;
+    padding: 18px 20px;
+    overflow-y: auto;
+  }
+  #right-inspector.open { transform: translateX(0); }
+  #ri-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 10px; margin-bottom: 4px;
+  }
+  #ri-title { font-size: 14px; font-weight: 600; line-height: 1.4; }
+  #ri-group { font-size: 11.5px; color: var(--muted); margin-bottom: 16px; }
+  #ri-close {
+    background: none; border: none; cursor: pointer;
+    font-size: 16px; color: var(--muted); line-height: 1; padding: 2px 4px;
+  }
+  #ri-close:hover { color: var(--text); }
+
+  .ri-section { margin-bottom: 18px; }
+  .ri-section h4 {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted); margin: 0 0 8px;
+  }
+  .ri-field {
+    display: flex; justify-content: space-between; gap: 10px;
+    font-size: 12.5px; padding: 5px 0;
+    border-bottom: 1px solid #f0efe9;
+  }
+  .ri-field .k { color: var(--muted); flex-shrink: 0; }
+  .ri-field .v { text-align: right; font-weight: 500; word-break: break-word; }
+  .ri-color-row { display: flex; align-items: center; gap: 8px; }
+  .ri-color-row .swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.15); }
+  .ri-note {
+    font-size: 12px; color: var(--muted); line-height: 1.55;
+    background: #f7f6f1; border-radius: 6px; padding: 10px 12px;
+  }
+  .ri-source {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11.5px; background: #f7f6f1; border-radius: 6px;
+    padding: 8px 10px; line-height: 1.5; word-break: break-word;
+  }
+  .ri-edit-row { margin-bottom: 10px; }
+  .ri-edit-row label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 3px; }
+  .ri-edit-row select, .ri-edit-row input[type=number] {
+    width: 100%; padding: 6px 8px; font-size: 12.5px;
+    border: 1px solid var(--border); border-radius: 5px; background: #fff; color: var(--text);
+  }
+  #ri-font-file { font-size: 11px; color: var(--muted); margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h1>E-ink layout editor</h1>
+  <div class="sub">800 × 480 — Waveshare 7.5&Prime; B/W/R</div>
+
+  <button class="btn primary" onclick="openExport()">Export coordinates</button>
+  <button class="btn" onclick="resetLayout()">Reset to current code layout</button>
+  <label class="btn" style="cursor:pointer;">
+    Load exported JSON
+    <input type="file" id="load-file" accept="application/json" style="display:none;">
+  </label>
+
+  <h2>Elements</h2>
+  <ul id="element-list"></ul>
+
+  <div id="inspector">
+    <div id="inspector-empty">Select an element to edit its position and size.</div>
+    <div id="inspector-body" style="display:none;">
+      <div id="inspector-name"></div>
+      <div id="inspector-meta"></div>
+      <div class="row">
+        <div>
+          <label>x</label>
+          <input type="number" id="inp-x">
+        </div>
+        <div>
+          <label>y</label>
+          <input type="number" id="inp-y">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>width</label>
+          <input type="number" id="inp-w">
+        </div>
+        <div>
+          <label>height</label>
+          <input type="number" id="inp-h">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="hint">
+    Drag boxes to move, drag the bottom-right corner to resize. Grid snaps to 5px. Boxes are colored by which image buffer they draw to (black vs red layer), matching the physical display. Dashed boxes are text/labels — their real footprint depends on rendered text, not the box size.
+  </div>
+</div>
+
+<div id="canvas-area">
+  <div id="canvas-toolbar">
+    <label><input type="checkbox" id="snap-toggle" checked onchange="toggleSnap()"> Snap to 5px grid</label>
+    <div id="layer-toggle" role="group" aria-label="Layer view">
+      <button type="button" data-mode="black" onclick="setLayerMode('black')">Black only</button>
+      <button type="button" data-mode="red" onclick="setLayerMode('red')">Red only</button>
+      <button type="button" data-mode="both" class="active" onclick="setLayerMode('both')">Both (red behind)</button>
+    </div>
+    <div id="sim-toggle-wrap">
+      <label><input type="checkbox" id="sim-toggle" checked onchange="toggleSimMode()"> Simulated preview</label>
+      <label><input type="checkbox" id="disruption-toggle" onchange="toggleDisruption()"> Simulate train disruption</label>
+    </div>
+  </div>
+  <div id="canvas-wrap">
+    <div id="canvas"></div>
+  </div>
+</div>
+
+<div id="right-inspector">
+  <div id="ri-header">
+    <div>
+      <div id="ri-title">—</div>
+      <div id="ri-group">—</div>
+    </div>
+    <button id="ri-close" onclick="closeRightInspector()" aria-label="Close">&times;</button>
+  </div>
+
+  <div class="ri-section">
+    <h4>Source</h4>
+    <div id="ri-source" class="ri-source">—</div>
+  </div>
+
+  <div class="ri-section">
+    <h4>Color</h4>
+    <div class="ri-color-row">
+      <div id="ri-color-swatch" class="swatch"></div>
+      <div id="ri-color-label">—</div>
+    </div>
+  </div>
+
+  <div class="ri-section" id="ri-font-section">
+    <h4>Font</h4>
+    <div class="ri-edit-row">
+      <label>Family / style</label>
+      <select id="ri-font-style-input">
+        <option value="regular">Regular — Atkinson Hyperlegible Next</option>
+        <option value="bold">Bold — Atkinson Hyperlegible Next</option>
+        <option value="icon">Icon glyph — Material Design Icons</option>
+      </select>
+    </div>
+    <div class="ri-edit-row">
+      <label>Size (pt)</label>
+      <input type="number" id="ri-font-size-input" min="6" max="120" step="1">
+    </div>
+    <div class="ri-edit-row">
+      <label>Alignment</label>
+      <select id="ri-font-align-input">
+        <option value="left">Left</option>
+        <option value="center">Center</option>
+        <option value="right">Right</option>
+      </select>
+    </div>
+    <div id="ri-font-file">—</div>
+  </div>
+
+  <div class="ri-section" id="ri-fillnote-section">
+    <h4>Fill / rendering notes</h4>
+    <div id="ri-fillnote" class="ri-note">—</div>
+  </div>
+</div>
+
+<div id="export-modal">
+  <div id="export-box">
+    <h3>Export layout</h3>
+    <div id="export-tabs">
+      <button class="active" data-fmt="python" onclick="switchExportTab('python')">Python constants</button>
+      <button data-fmt="json" onclick="switchExportTab('json')">JSON</button>
+    </div>
+    <textarea id="export-text" readonly></textarea>
+    <div id="export-actions">
+      <button class="btn" onclick="copyExport()">Copy to clipboard</button>
+      <button class="btn primary" onclick="closeExport()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------------------------------------------------------------------
+   Layout model — mirrors main.py's display_combined_view() draw order
+   and coordinates as of the version reviewed (app/main.py:1254-1293).
+   Coordinates below are the literal x/y/w/h values (or first-iteration
+   values for repeating elements) pulled from the source.
+--------------------------------------------------------------------- */
+const FONTS = {
+  regular: { key: "regular", family: "Atkinson Hyperlegible Next", style: "Regular", file: "AtkinsonHyperlegibleNext-Regular.otf" },
+  bold: { key: "bold", family: "Atkinson Hyperlegible Next", style: "Bold", file: "AtkinsonHyperlegibleNext-Bold.otf" },
+  icon: { key: "icon", family: "Material Design Icons", style: "Icon glyph", file: "materialdesignicons-webfont.ttf" },
+};
+
+const SIM = {
+  timestamp: { time: "14:32", date: "01 Jul 2026" },
+  headerA: "Bus Stop 83139",
+  journey: "Raffles Place",
+  buses: [
+    { number: "12", times: "3 | 15 | 28", loadLabel: "Seats avail", loadFrac: 0.15 },
+    { number: "45", times: "7 | 22", loadLabel: "Std avail", loadFrac: 0.55 },
+    { number: "858", times: "Arr | 18 | 35", loadLabel: "Ltd standing", loadFrac: 0.9 },
+  ],
+  train: {
+    line: "North-South Line",
+    direction: "Towards Jurong East",
+    stations: "Affected: Orchard, Somerset, Dhoby Ghaut",
+    alert: "Free bridging buses available at affected stations.",
+  },
+  weather: { temp: 29, condition: "Partly Cloudy", humidity: 68 },
+};
+
+const SIM_ICONS = {
+  bus_marker_icon: "bus-marker",
+  mqtt_icon: "home-automation",
+  train_header_icon: "subway",
+  weather_icon: "weather-partly-cloudy",
+};
+
+// Bus row companions (times / load bar / load text) are drawn at fixed
+// offsets from the bus-box's own x in main.py — not independently
+// positioned. Offsets below are those literal deltas (e.g. times text at
+// x=200 when the box is at x=20 -> +180), kept relative to the box so the
+// simulated row moves as a unit when the box is dragged in this tool.
+const BUS_ROW_OFFSET = { times: 180, loadIcon: 175, loadText: 193, bar1: 130, bar2: 150 };
+
+let simMode = true;
+let simDisruption = false;
+
+function toggleSimMode() {
+  simMode = document.getElementById("sim-toggle").checked;
+  document.getElementById("canvas").classList.toggle("sim-mode", simMode);
+  buildCanvas();
+}
+function toggleDisruption() {
+  simDisruption = document.getElementById("disruption-toggle").checked;
+  buildCanvas();
+}
+
+function fontCss(font, color, sizeOverride) {
+  const weight = font && font.key === "bold" ? 700 : 400;
+  const size = sizeOverride || (font ? font.size : 14);
+  return `font-weight:${weight}; font-size:${size}px; color:${color};`;
+}
+
+function iconHtml(name, sizePx, color) {
+  return `<i class="mdi mdi-${name}" style="font-size:${sizePx}px; color:${color}; line-height:1;" aria-hidden="true"></i>`;
+}
+
+function renderSimBody(el) {
+  switch (el.id) {
+    case "bus_marker_icon":
+      return iconHtml(SIM_ICONS.bus_marker_icon, el.font.size, "#000");
+    case "mqtt_icon":
+      return iconHtml(SIM_ICONS.mqtt_icon, el.font.size, "#a32d2d");
+    case "timestamp":
+      return `<div style="width:100%; text-align:right;">
+        <div style="${fontCss(el.font, "#a32d2d")}">Updated: ${SIM.timestamp.time}</div>
+        <div style="${fontCss(el.font, "#a32d2d", Math.round(el.font.size * 0.67))}">${SIM.timestamp.date}</div>
+      </div>`;
+    case "header_a_text":
+      return `<div style="${fontCss(el.font, "#a32d2d")}">${SIM.headerA}</div>`;
+    case "journey_header":
+      return `<div style="display:flex; align-items:center; gap:6px;">
+        ${iconHtml("map-marker-distance", 20, "#a32d2d")}
+        <span style="${fontCss(el.font, "#111")}">Journeys to: ${SIM.journey}</span>
+      </div>`;
+    case "bus_box_1": case "bus_box_2": case "bus_box_3": {
+      const idx = { bus_box_1: 0, bus_box_2: 1, bus_box_3: 2 }[el.id];
+      const bus = SIM.buses[idx];
+      return `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; ${fontCss(el.font, "#fff")}">${bus.number}</div>`;
+    }
+    case "train_header_icon":
+      return iconHtml(SIM_ICONS.train_header_icon, el.font.size, "#000");
+    case "train_header_text":
+      return `<div style="${fontCss(el.font, "#a32d2d")}">Train Status</div>`;
+    case "train_body":
+      if (!simDisruption) {
+        return `<div style="display:flex; gap:8px;">
+          ${iconHtml("check-circle-outline", 24, "#a32d2d")}
+          <div style="${fontCss(el.font, "#111")} line-height:1.5;">All trains running<br>smoothly today!<br>No disruptions<br>expected.</div>
+        </div>`;
+      }
+      return `<div style="${fontCss(el.font, "#111", 16)} line-height:1.7;">
+        <div style="display:flex; align-items:center; gap:6px;">${iconHtml("alert-circle-outline", 20, "#a32d2d")}<span style="color:#a32d2d; font-weight:700;">Line: ${SIM.train.line}</span></div>
+        <div>Dir: ${SIM.train.direction}</div>
+        <div>${SIM.train.stations}</div>
+        <div style="margin-top:6px; display:flex; align-items:center; gap:6px;">${iconHtml("alert", 16, "#a32d2d")}<span style="color:#a32d2d; font-weight:700;">Alert:</span></div>
+        <div style="font-size:14px;">${SIM.train.alert}</div>
+      </div>`;
+    case "weather_header":
+      return `<div style="${fontCss(el.font, "#111")}">Weather</div>`;
+    case "weather_icon":
+      return iconHtml(SIM_ICONS.weather_icon, el.font.size, "#000");
+    case "weather_temp":
+      return `<div style="${fontCss(el.font, "#a32d2d")}">${SIM.weather.temp}°C</div>`;
+    case "weather_condition":
+      return `<div style="${fontCss(el.font, "#111")}">${SIM.weather.condition}</div>`;
+    case "weather_humidity":
+      return `<div style="display:flex; align-items:center; gap:4px;">
+        ${iconHtml("water-percent", 18, "#a32d2d")}
+        <span style="${fontCss(el.font, "#a32d2d")}">${SIM.weather.humidity}%</span>
+      </div>`;
+    default:
+      return "";
+  }
+}
+
+function appendBusRowCompanions(canvas, el) {
+  const idx = { bus_box_1: 0, bus_box_2: 1, bus_box_3: 2 }[el.id];
+  if (idx === undefined || !el.visible) return;
+  const bus = SIM.buses[idx];
+
+  if (layerMode === "both" || layerMode === "black") {
+    const times = document.createElement("div");
+    times.className = "sim-companion";
+    times.style.left = (el.x + BUS_ROW_OFFSET.times) + "px";
+    times.style.top = (el.y + el.h / 2 - 15) + "px";
+    times.style.fontWeight = "400";
+    times.style.fontSize = "26px";
+    times.style.color = "#111";
+    times.textContent = bus.times;
+    canvas.appendChild(times);
+  }
+
+  if (layerMode === "both" || layerMode === "red") {
+    const loadInfo = document.createElement("div");
+    loadInfo.className = "sim-companion";
+    loadInfo.style.left = (el.x + BUS_ROW_OFFSET.loadIcon) + "px";
+    loadInfo.style.top = (el.y + 4) + "px";
+    loadInfo.style.display = "flex";
+    loadInfo.style.alignItems = "center";
+    loadInfo.style.gap = "3px";
+    loadInfo.innerHTML = `${iconHtml("account-multiple", 13, "#a32d2d")}<span style="font-size:11px; color:#a32d2d;">${bus.loadLabel}</span>`;
+    canvas.appendChild(loadInfo);
+
+    const trackH = el.h - 10;
+    const track = document.createElement("div");
+    track.className = "sim-companion";
+    track.style.left = (el.x + BUS_ROW_OFFSET.bar1) + "px";
+    track.style.top = (el.y + 5) + "px";
+    track.style.width = (BUS_ROW_OFFSET.bar2 - BUS_ROW_OFFSET.bar1) + "px";
+    track.style.height = trackH + "px";
+    track.style.background = "#fff";
+    track.style.border = "1px solid #ccc";
+    canvas.appendChild(track);
+
+    const fillH = Math.round(trackH * bus.loadFrac);
+    const fill = document.createElement("div");
+    fill.className = "sim-companion";
+    fill.style.left = (el.x + BUS_ROW_OFFSET.bar1) + "px";
+    fill.style.top = (el.y + 5 + (trackH - fillH)) + "px";
+    fill.style.width = (BUS_ROW_OFFSET.bar2 - BUS_ROW_OFFSET.bar1) + "px";
+    fill.style.height = fillH + "px";
+    fill.style.background = "#a32d2d";
+    canvas.appendChild(fill);
+  }
+}
+
+const DEFAULT_ELEMENTS = [
+  { id: "bus_marker_icon", label: "Bus marker icon (header)", group: "Header",
+    x: 15, y: 5, w: 50, h: 50, color: "black", type: "icon",
+    note: "MDI.BUS_MARKER, size 50. Line ~1267.",
+    source: { func: "display_combined_view()", lines: "1267" },
+    font: { ...FONTS.icon, size: 50, align: "left" } },
+
+  { id: "timestamp", label: "Timestamp (Updated + date)", group: "Header",
+    x: 620, y: 10, w: 170, h: 44, color: "red", type: "text",
+    note: "Right-aligned to epd_width-15. 'Updated: HH:MM' size 18 + date size 12. draw_timestamp(), lines 1014-1037.",
+    source: { func: "draw_timestamp()", lines: "1014-1037" },
+    font: { ...FONTS.regular, size: 18, align: "right" },
+    fillNote: "Two lines share this box: time string at size 18 (y), date string directly below at size 12 (y+22). Both right-aligned by measuring text width and offsetting from epd_width-15." },
+
+  { id: "mqtt_icon", label: "Home automation / MQTT icon", group: "Footer",
+    x: 730, y: 410, w: 50, h: 50, color: "red", type: "icon",
+    note: "Only drawn if mqtt_connected. (epd.width-70, epd.height-70). Line ~1270.",
+    source: { func: "display_combined_view()", lines: "1270-1271" },
+    font: { ...FONTS.icon, size: 50, align: "left" },
+    fillNote: "Conditionally rendered — only appears when mqtt_connected is true. Not drawn at all otherwise." },
+
+  { id: "center_divider", label: "Center vertical divider", group: "Structure",
+    x: 399, y: 60, w: 2, h: 410, color: "red", type: "line",
+    note: "x=column_offset (epd.width//2), y 60 to epd.height-10, width 2. Line ~1273.",
+    source: { func: "display_combined_view()", lines: "1273-1274" },
+    font: null },
+
+  { id: "header_a_text", label: "Left header text (HEADER_A)", group: "Header",
+    x: 80, y: 18, w: 220, h: 32, color: "red", type: "text",
+    note: "Text from HEADER_A env var (default 'Bus Stop'), bold size 28. Line ~1276.",
+    source: { func: "display_combined_view()", lines: "1276" },
+    font: { ...FONTS.bold, size: 28, align: "left" } },
+
+  { id: "header_a_divider", label: "Left header divider line", group: "Structure",
+    x: 10, y: 55, w: 380, h: 1, color: "red", type: "line",
+    note: "(10,55) to (column_offset-10, 55). Line ~1278.",
+    source: { func: "display_combined_view()", lines: "1278" },
+    font: null },
+
+  { id: "journey_header", label: "Journey destination header (optional)", group: "Bus column",
+    x: 25, y: 70, w: 380, h: 28, color: "black", type: "text",
+    note: "Only if SHOW_JOURNEY_TIME. Icon + 'Journeys to: {dest}' + divider. draw_bus_section(), ~1043-1060.",
+    source: { func: "draw_bus_section()", lines: "1043-1060" },
+    font: { ...FONTS.regular, size: 16, align: "left" },
+    fillNote: "Compound: MDI.MAP_MARKER_DISTANCE icon (red, size 20) at x=25, text 'Journeys to: {dest}' (black, size 16) at x=50, then a 1px black divider line underneath. Only shows when SHOW_JOURNEY_TIME is enabled." },
+
+  { id: "bus_box_1", label: "Bus box #1 (number + times + load)", group: "Bus column",
+    x: 20, y: 80, w: 160, h: 60, color: "black", type: "rect",
+    note: "Filled black rect, bus number in white size 32 bold. Arrival times text at x=200. Load bar at x=150-170. y_start=70, box_top=y+10. draw_bus_section(), lines 1039-1128.",
+    source: { func: "draw_bus_section()", lines: "1039-1128" },
+    font: { ...FONTS.bold, size: 32, align: "left" },
+    fillNote: "Compound element: solid black rect (160x60) with the bus number punched out in white (fill=255) using Bold 32. Outside the rect: arrival-times text at x=200 in Regular 32 black (font param, defaults to get_font(BUS_NUMBER_FONT_SIZE)). Load-bar icon+text in Regular 16 red at x=195-213. Load bar itself is a 20x50 rect, white background with a red fill-from-bottom indicator." },
+
+  { id: "bus_box_2", label: "Bus box #2", group: "Bus column",
+    x: 20, y: 185, w: 160, h: 60, color: "black", type: "rect",
+    note: "Repeats every BUS_BOX_Y_SPACING=105px below box #1 (y = 70 + 105 + 10 = 185).",
+    source: { func: "draw_bus_section()", lines: "1039-1128 (loop iteration 2)" },
+    font: { ...FONTS.bold, size: 32, align: "left" },
+    fillNote: "Same composition as bus box #1 — one iteration of the per-service loop, offset by BUS_BOX_Y_SPACING (105px)." },
+
+  { id: "bus_box_3", label: "Bus box #3", group: "Bus column",
+    x: 20, y: 290, w: 160, h: 60, color: "black", type: "rect",
+    note: "y = 70 + 210 + 10 = 290. Add more copies in code if BUS_STOP has more services configured.",
+    source: { func: "draw_bus_section()", lines: "1039-1128 (loop iteration 3)" },
+    font: { ...FONTS.bold, size: 32, align: "left" },
+    fillNote: "Same composition as bus box #1 — one iteration of the per-service loop, offset by 2x BUS_BOX_Y_SPACING (210px)." },
+
+  { id: "train_header_icon", label: "Train section icon", group: "Train column",
+    x: 395, y: 8, w: 40, h: 40, color: "black", type: "icon",
+    note: "MDI.SUBWAY at (train_x-5, 8), size 40. train_x = column_offset+20 = 420.",
+    source: { func: "draw_train_section()", lines: "1191-1252" },
+    font: { ...FONTS.icon, size: 40, align: "left" } },
+
+  { id: "train_header_text", label: "'Train Status' header", group: "Train column",
+    x: 465, y: 18, w: 220, h: 32, color: "red", type: "text",
+    note: "(train_x+45, 18), bold size 28.",
+    source: { func: "draw_train_section()", lines: "1191-1252" },
+    font: { ...FONTS.bold, size: 28, align: "left" } },
+
+  { id: "train_header_divider", label: "Train header divider line", group: "Structure",
+    x: 420, y: 55, w: 370, h: 1, color: "red", type: "line",
+    note: "(train_x, 55) to (epd_width-10, 55).",
+    source: { func: "draw_train_section()", lines: "1191-1252" },
+    font: null },
+
+  { id: "train_body", label: "Train status body (icon + 4 lines / disruption list)", group: "Train column",
+    x: 420, y: 70, w: 370, h: 190, color: "black", type: "text",
+    note: "No-disruption case: check-circle + 4 text lines. Disruption case: loops Line/Dir/Stations/Alert per disruption, stops if y_offset > epd_width-200. draw_train_section(), lines 1191-1252.",
+    source: { func: "draw_train_section()", lines: "1191-1252" },
+    font: { ...FONTS.regular, size: 20, align: "left" },
+    fillNote: "Two possible renders: (1) no disruptions — a red check-circle icon (24) plus 4 lines of black Regular 20 text; (2) disruptions — repeating red alert-circle icon + red 'Line: {Line}' (Regular 20) + black 'Dir: {Direction}' (Regular 20) + black wrapped station list (Regular 16) + optional 'Alert:' content in Regular 14/16. Layout is dynamic, not fixed — the box shown here is only an approximate footprint." },
+
+  { id: "weather_divider", label: "Weather section divider line", group: "Weather",
+    x: 420, y: 340, w: 370, h: 1, color: "red", type: "line",
+    note: "weather_y = epd_height-140 = 340. (x_start, weather_y) to (epd_width-10, weather_y).",
+    source: { func: "draw_weather_section_right()", lines: "1155-1189" },
+    font: null },
+
+  { id: "weather_header", label: "'Weather' header", group: "Weather",
+    x: 420, y: 355, w: 100, h: 26, color: "black", type: "text",
+    note: "(x_start, weather_y+15), bold size 20.",
+    source: { func: "draw_weather_section_right()", lines: "1155-1189" },
+    font: { ...FONTS.bold, size: 20, align: "left" } },
+
+  { id: "weather_icon", label: "Weather condition icon", group: "Weather",
+    x: 420, y: 383, w: 35, h: 35, color: "black", type: "icon",
+    note: "weather_y += 15+28 internally -> y=383. draw_mdi_icon size 35.",
+    source: { func: "draw_weather_section_right()", lines: "1155-1189" },
+    font: { ...FONTS.icon, size: 35, align: "left" } },
+
+  { id: "weather_temp", label: "Temperature text", group: "Weather",
+    x: 465, y: 388, w: 90, h: 30, color: "red", type: "text",
+    note: "(x_start+45, weather_y+5), '{temp}°C', size 24.",
+    source: { func: "draw_weather_section_right()", lines: "1155-1189" },
+    font: { ...FONTS.regular, size: 24, align: "left" } },
+
+  { id: "weather_condition", label: "Condition text", group: "Weather",
+    x: 420, y: 423, w: 150, h: 22, color: "black", type: "text",
+    note: "(x_start, weather_y+40), condition[:15], size 16.",
+    source: { func: "draw_weather_section_right()", lines: "1155-1189" },
+    font: { ...FONTS.regular, size: 16, align: "left" } },
+
+  { id: "weather_humidity", label: "Humidity icon + text", group: "Weather",
+    x: 420, y: 448, w: 90, h: 22, color: "red", type: "text",
+    note: "(x_start, weather_y+65) icon + (x_start+23, weather_y+65) text, size 14.",
+    source: { func: "draw_weather_section_right()", lines: "1155-1189" },
+    font: { ...FONTS.regular, size: 14, align: "left" },
+    fillNote: "MDI.WATER_PERCENT icon (red, size 18) followed immediately by '{humidity}%' text (red, Regular 14) 23px to the right." },
+];
+
+const GROUP_ORDER = ["Header", "Structure", "Bus column", "Train column", "Weather", "Footer"];
+
+let elements = [];
+let selectedId = null;
+let snapEnabled = true;
+let layerMode = "both";
+
+function setLayerMode(mode) {
+  layerMode = mode;
+  document.querySelectorAll("#layer-toggle button").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
+  buildCanvas();
+}
+
+function cloneDefaults() {
+  return DEFAULT_ELEMENTS.map(e => ({ ...e, visible: true }));
+}
+
+function snap(v) {
+  return snapEnabled ? Math.round(v / 5) * 5 : Math.round(v);
+}
+
+function buildCanvas() {
+  const canvas = document.getElementById("canvas");
+  canvas.innerHTML = "";
+  // Stable sort: red elements first (painted behind), black elements after
+  // (painted on top) — mirrors the physical display where the black layer
+  // sits over the red layer when both are shown together.
+  const renderOrder = [...elements].sort((a, b) => {
+    if (a.color === b.color) return 0;
+    return a.color === "red" ? -1 : 1;
+  });
+  renderOrder.forEach(el => {
+    const layerVisible = layerMode === "both" || el.color === layerMode;
+    const div = document.createElement("div");
+    div.className = `el color-${el.color} ${el.type}-type` + ((el.visible && layerVisible) ? "" : " hidden-el");
+    div.dataset.id = el.id;
+    div.style.left = el.x + "px";
+    div.style.top = el.y + "px";
+    div.style.width = Math.max(el.w, 4) + "px";
+    div.style.height = Math.max(el.h, 4) + "px";
+
+    const tag = document.createElement("div");
+    tag.className = "tag";
+    tag.textContent = el.label;
+    div.appendChild(tag);
+
+    if (simMode) {
+      const body = document.createElement("div");
+      body.className = `sim-body align-${(el.font && el.font.align) || "left"}`;
+      body.innerHTML = renderSimBody(el);
+      div.appendChild(body);
+    }
+
+    const handle = document.createElement("div");
+    handle.className = "handle";
+    div.appendChild(handle);
+
+    div.addEventListener("mousedown", (e) => onElMouseDown(e, el, div, false));
+    handle.addEventListener("mousedown", (e) => { e.stopPropagation(); onElMouseDown(e, el, div, true); });
+
+    canvas.appendChild(div);
+
+    if (simMode && el.type === "rect") {
+      appendBusRowCompanions(canvas, el);
+    }
+  });
+  refreshSelectionVisual();
+}
+
+function buildList() {
+  const list = document.getElementById("element-list");
+  list.innerHTML = "";
+  GROUP_ORDER.forEach(group => {
+    const groupEls = elements.filter(e => e.group === group);
+    if (!groupEls.length) return;
+    const header = document.createElement("li");
+    header.style.cssText = "font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);cursor:default;margin-top:10px;padding:2px 8px;";
+    header.textContent = group;
+    header.onmouseenter = null;
+    list.appendChild(header);
+    groupEls.forEach(el => {
+      const li = document.createElement("li");
+      li.dataset.id = el.id;
+      if (el.id === selectedId) li.classList.add("selected");
+      const sw = document.createElement("div");
+      sw.className = "swatch";
+      sw.style.background = el.color === "red" ? "#a32d2d" : "#000";
+      li.appendChild(sw);
+      const lbl = document.createElement("div");
+      lbl.className = "lbl";
+      lbl.textContent = el.label;
+      li.appendChild(lbl);
+      const vis = document.createElement("span");
+      vis.className = "vis-toggle";
+      vis.textContent = el.visible ? "hide" : "show";
+      vis.onclick = (e) => {
+        e.stopPropagation();
+        el.visible = !el.visible;
+        buildCanvas();
+        buildList();
+      };
+      li.appendChild(vis);
+      li.onclick = () => selectElement(el.id);
+      list.appendChild(li);
+    });
+  });
+}
+
+function selectElement(id) {
+  selectedId = id;
+  refreshSelectionVisual();
+  buildList();
+  updateInspector();
+  updateRightInspector();
+  openRightInspector();
+}
+
+function openRightInspector() {
+  document.getElementById("right-inspector").classList.add("open");
+}
+function closeRightInspector() {
+  document.getElementById("right-inspector").classList.remove("open");
+}
+
+function updateRightInspector() {
+  const el = elements.find(e => e.id === selectedId);
+  if (!el) return;
+
+  document.getElementById("ri-title").textContent = el.label;
+  document.getElementById("ri-group").textContent = el.group;
+
+  const src = el.source;
+  document.getElementById("ri-source").textContent = src
+    ? `${src.func}\napp/main.py:${src.lines}`
+    : "Not mapped to a specific call.";
+
+  const isRed = el.color === "red";
+  document.getElementById("ri-color-swatch").style.background = isRed ? "#a32d2d" : "#000";
+  document.getElementById("ri-color-label").textContent = isRed
+    ? "Red — drawn on the red image buffer (draw_r)"
+    : "Black — drawn on the black image buffer (draw)";
+
+  const fontSection = document.getElementById("ri-font-section");
+  if (el.font) {
+    fontSection.style.display = "block";
+    document.getElementById("ri-font-style-input").value = el.font.key || "regular";
+    document.getElementById("ri-font-size-input").value = el.font.size;
+    document.getElementById("ri-font-align-input").value = el.font.align || "left";
+    document.getElementById("ri-font-file").textContent = el.font.file ? `File: ${el.font.file}` : "";
+  } else {
+    fontSection.style.display = "none";
+  }
+
+  const fillSection = document.getElementById("ri-fillnote-section");
+  if (el.fillNote) {
+    fillSection.style.display = "block";
+    document.getElementById("ri-fillnote").textContent = el.fillNote;
+  } else if (!el.font) {
+    fillSection.style.display = "block";
+    document.getElementById("ri-fillnote").textContent = "Structural line/rect — no text or font is involved.";
+  } else {
+    fillSection.style.display = "none";
+  }
+}
+
+document.getElementById("ri-font-style-input").addEventListener("change", (e) => {
+  const el = elements.find(e => e.id === selectedId);
+  if (!el || !el.font) return;
+  const preset = FONTS[e.target.value];
+  el.font = { ...preset, size: el.font.size, align: el.font.align };
+  updateRightInspector();
+  buildCanvas();
+});
+document.getElementById("ri-font-size-input").addEventListener("input", (e) => {
+  const el = elements.find(e => e.id === selectedId);
+  if (!el || !el.font) return;
+  el.font.size = parseInt(e.target.value) || el.font.size;
+  buildCanvas();
+});
+document.getElementById("ri-font-align-input").addEventListener("change", (e) => {
+  const el = elements.find(e => e.id === selectedId);
+  if (!el || !el.font) return;
+  el.font.align = e.target.value;
+  buildCanvas();
+});
+
+function refreshSelectionVisual() {
+  document.querySelectorAll("#canvas .el").forEach(d => {
+    d.classList.toggle("selected", d.dataset.id === selectedId);
+  });
+}
+
+function updateInspector() {
+  const el = elements.find(e => e.id === selectedId);
+  const empty = document.getElementById("inspector-empty");
+  const body = document.getElementById("inspector-body");
+  if (!el) {
+    empty.style.display = "block";
+    body.style.display = "none";
+    return;
+  }
+  empty.style.display = "none";
+  body.style.display = "block";
+  document.getElementById("inspector-name").textContent = el.label;
+  document.getElementById("inspector-meta").textContent = el.note || "";
+  document.getElementById("inp-x").value = el.x;
+  document.getElementById("inp-y").value = el.y;
+  document.getElementById("inp-w").value = el.w;
+  document.getElementById("inp-h").value = el.h;
+}
+
+["inp-x", "inp-y", "inp-w", "inp-h"].forEach(id => {
+  document.getElementById(id).addEventListener("input", () => {
+    const el = elements.find(e => e.id === selectedId);
+    if (!el) return;
+    el.x = parseInt(document.getElementById("inp-x").value) || 0;
+    el.y = parseInt(document.getElementById("inp-y").value) || 0;
+    el.w = parseInt(document.getElementById("inp-w").value) || 1;
+    el.h = parseInt(document.getElementById("inp-h").value) || 1;
+    buildCanvas();
+  });
+});
+
+let dragState = null;
+
+function onElMouseDown(e, el, div, isResize) {
+  e.preventDefault();
+  selectElement(el.id);
+  dragState = {
+    el, isResize,
+    startX: e.clientX, startY: e.clientY,
+    origX: el.x, origY: el.y, origW: el.w, origH: el.h,
+  };
+  document.addEventListener("mousemove", onDragMove);
+  document.addEventListener("mouseup", onDragEnd);
+}
+
+function onDragMove(e) {
+  if (!dragState) return;
+  const dx = e.clientX - dragState.startX;
+  const dy = e.clientY - dragState.startY;
+  const el = dragState.el;
+  if (dragState.isResize) {
+    el.w = Math.max(4, snap(dragState.origW + dx));
+    el.h = Math.max(4, snap(dragState.origH + dy));
+  } else {
+    el.x = Math.max(0, snap(dragState.origX + dx));
+    el.y = Math.max(0, snap(dragState.origY + dy));
+  }
+  buildCanvas();
+  updateInspector();
+}
+
+function onDragEnd() {
+  dragState = null;
+  document.removeEventListener("mousemove", onDragMove);
+  document.removeEventListener("mouseup", onDragEnd);
+}
+
+function toggleSnap() {
+  snapEnabled = document.getElementById("snap-toggle").checked;
+  document.getElementById("canvas").classList.toggle("snap-off", !snapEnabled);
+}
+
+function resetLayout() {
+  if (!confirm("Discard current edits and reload the layout from the code as-reviewed?")) return;
+  elements = cloneDefaults();
+  selectedId = null;
+  buildCanvas();
+  buildList();
+  updateInspector();
+  closeRightInspector();
+}
+
+document.getElementById("load-file").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!Array.isArray(data)) throw new Error("not an array");
+      elements = data.map(d => ({ ...d, visible: d.visible !== false }));
+      selectedId = null;
+      buildCanvas();
+      buildList();
+      updateInspector();
+      closeRightInspector();
+    } catch (err) {
+      alert("Could not load file: " + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
+});
+
+/* ---------------- Export ---------------- */
+function openExport() {
+  document.getElementById("export-modal").classList.add("open");
+  switchExportTab("python");
+}
+function closeExport() {
+  document.getElementById("export-modal").classList.remove("open");
+}
+function switchExportTab(fmt) {
+  document.querySelectorAll("#export-tabs button").forEach(b => b.classList.toggle("active", b.dataset.fmt === fmt));
+  const ta = document.getElementById("export-text");
+  ta.value = fmt === "json" ? exportJSON() : exportPython();
+}
+function exportJSON() {
+  return JSON.stringify(elements.map(({ id, label, group, x, y, w, h, color, type, note, visible, font, source, fillNote }) =>
+    ({ id, label, group, x, y, w, h, color, type, note, visible, font, source, fillNote })), null, 2);
+}
+function exportPython() {
+  const lines = [];
+  lines.push("# Coordinates exported from tools/layout_editor.html");
+  lines.push("# Paste these values into app/main.py at the referenced line numbers.");
+  lines.push("# Box-derived coords only — text/label boxes are visual placeholders for");
+  lines.push("# where the string starts drawing; PIL still auto-sizes the rendered text.");
+  lines.push("");
+  GROUP_ORDER.forEach(group => {
+    const groupEls = elements.filter(e => e.group === group);
+    if (!groupEls.length) return;
+    lines.push(`# ---- ${group} ----`);
+    groupEls.forEach(el => {
+      lines.push(`# ${el.label}`);
+      if (el.note) lines.push(`#   ${el.note}`);
+      if (el.type === "line") {
+        lines.push(`#   line: (${el.x}, ${el.y}, ${el.x + el.w}, ${el.y + el.h})`);
+      } else if (el.type === "rect") {
+        lines.push(`#   rect: (${el.x}, ${el.y}, ${el.x + el.w}, ${el.y + el.h})`);
+      } else {
+        lines.push(`#   xy: (${el.x}, ${el.y})   w=${el.w} h=${el.h}`);
+      }
+      if (el.font) {
+        const fn = el.font.key === "bold" ? "get_font_bold" : "get_font";
+        lines.push(`#   color: ${el.color}   font: ${fn}(${el.font.size})   align: ${el.font.align}`);
+      } else {
+        lines.push(`#   color: ${el.color}   (no text/font)`);
+      }
+      lines.push("");
+    });
+  });
+  return lines.join("\n");
+}
+function copyExport() {
+  const ta = document.getElementById("export-text");
+  ta.select();
+  document.execCommand("copy");
+}
+
+/* ---------------- Init ---------------- */
+elements = cloneDefaults();
+document.getElementById("canvas").classList.toggle("sim-mode", simMode);
+buildCanvas();
+buildList();
+updateInspector();
+</script>
+
+</body>
+</html>

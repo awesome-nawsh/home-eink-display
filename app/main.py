@@ -56,7 +56,6 @@ BUS_LOAD_MAP_TEXT = {'SEA': 'Seats', 'SDA': 'Standing', 'LSD': 'Limited'}
 COLUMN_WIDTH_RATIO = 0.5
 BUS_BOX_HEIGHT = 60
 BUS_BOX_WIDTH = 160
-BUS_BOX_Y_OFFSET = 50
 BUS_BOX_Y_SPACING = 105
 BUS_NUMBER_FONT_SIZE = 32
 LOAD_FONT_SIZE = 16
@@ -121,7 +120,7 @@ MQTT_TOPIC_REFRESH = os.getenv('MQTT_TOPIC_REFRESH', 'eink/display/refresh')
 MQTT_TOPIC_STATUS = os.getenv('MQTT_TOPIC_STATUS', 'eink/display/status')
 
 # Cache duration
-CACHE_DURATION = 20
+CACHE_DURATION = int(os.getenv('CACHE_DURATION', '20'))
 WEATHER_CACHE_DURATION = int(os.getenv('WEATHER_CACHE_DURATION', '1800'))
 
 # Global flag for manual refresh
@@ -1127,31 +1126,6 @@ def draw_bus_section(draw, draw_r, bus_info, font, y_start, load_font, journey_t
     
     return y
 
-def draw_weather_section(draw, draw_r, weather_info, epd_height, column_offset):
-    """Draw the weather section in fixed position at bottom left."""
-    if not weather_info:
-        return
-    
-    weather_y = epd_height - 120
-    
-    draw_r.line((10, weather_y, column_offset - 10, weather_y), fill=0, width=1)
-    weather_y += 15
-    
-    weather_icon = get_weather_icon(weather_info.get('condition'))
-    draw_mdi_icon(draw, 20, weather_y, weather_icon, size=35, color=0)
-    
-    temp = weather_info.get('temperature')
-    if temp:
-        draw_r.text((65, weather_y + 5), f"{temp}°C", font=get_font(FONT_LARGE), fill=0)
-    
-    condition = weather_info.get('condition', '').title()
-    draw.text((20, weather_y + 40), condition[:15], font=get_font(FONT_MEDIUM), fill=0)
-    
-    humidity = weather_info.get('humidity')
-    if humidity:
-        draw_mdi_icon(draw_r, 20, weather_y + 65, MDI.WATER_PERCENT, size=18, color=0)
-        draw_r.text((43, weather_y + 65), f"{humidity}%", font=get_font(14), fill=0)
-
 def draw_weather_section_right(draw, draw_r, weather_info, x_start, epd_width, epd_height):
     """Draw the weather section in right column below train status."""
     if not weather_info:
@@ -1486,7 +1460,7 @@ def main():
             
             if not watchdog.check():
                 logging.critical("Watchdog detected stuck loop - restarting...")
-                break
+                return 1
             
             current_hour = datetime.now().hour
             manual_refresh = False
@@ -1571,7 +1545,6 @@ def main():
             mqtt_client.disconnect()
         epd7in5b_V2.epdconfig.module_exit(cleanup=True)
         logging.info("Application terminated")
-        return 0
 
 if __name__ == "__main__":
     sys.exit(main())
