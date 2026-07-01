@@ -33,6 +33,15 @@ git clone https://github.com/awesome-nawsh/home-eink-display.git
 cd home-eink-display
 ```
 
+**Optional — exclude `tests/` from the Pi's working tree.** It's completely harmless to leave in place (nothing at runtime imports it, no extra dependencies, negligible disk use), but if you'd rather not have it checked out on the device itself:
+
+```bash
+git sparse-checkout init --cone
+git sparse-checkout set app images lib pic systemd tools
+```
+
+This only affects what's materialized in the working directory — `tests/` stays fully tracked in git history, and `git pull` keeps working normally afterward. Just `rm -rf tests/` on its own won't stick, since a future `git pull` would recreate it; sparse-checkout is the durable way. To bring it back later: `git sparse-checkout disable`.
+
 ## 3. Install dependencies
 
 `pigpio` is a system package, not a pip package — install it via `apt` first:
