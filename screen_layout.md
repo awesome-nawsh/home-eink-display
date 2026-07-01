@@ -13,13 +13,14 @@ Pixel-level reference for everything drawn onto the e-ink panel by `app/main.py`
   - `black_image` / `draw` — anything drawn here renders **black**.
   - `red_image` / `draw_r` — anything drawn here renders **red**.
   - The panel composites both at refresh time. There is no way to draw a third color or blend — every element must be assigned to exactly one buffer.
-- **Layout constants** (`main.py:55-72`):
+- **Layout constants** (`main.py:55-125ish`) — every coordinate/size/spacing value used across the draw functions is a named constant; there are no bare pixel literals left in the render code except a small number of genuinely one-off font-metric nudges (documented inline in `main.py` where they occur). Grouped by area:
 
   ```python
-  COLUMN_WIDTH_RATIO = 0.5
+  # Core box/column
+  COLUMN_WIDTH_RATIO = 0.5   # column_offset = int(epd.width * COLUMN_WIDTH_RATIO)
   BUS_BOX_HEIGHT = 60
   BUS_BOX_WIDTH = 160
-  BUS_BOX_Y_OFFSET = 70        # y_start passed to draw_bus_section; 15px below the header divider at y=55
+  BUS_BOX_Y_OFFSET = 70      # y_start for draw_bus_section
   BUS_BOX_Y_SPACING = 105
   BUS_NUMBER_FONT_SIZE = 32
   LOAD_FONT_SIZE = 16
@@ -27,12 +28,60 @@ Pixel-level reference for everything drawn onto the e-ink panel by `app/main.py`
   BOTTOM_MARGIN = 35
   TOP_MARGIN = 20
   DIVIDER_WIDTH = 2
+  WEATHER_SECTION_HEIGHT = 140
 
+  # Font sizes
   FONT_SMALL = 12
   FONT_MEDIUM = 16
   FONT_LARGE = 24
   FONT_XLARGE = 32
+  FONT_TIMESTAMP = 18   # timestamp, journey-time line, boot "Booted:" text
+  FONT_SECTION = 20     # weather header (bold) / train body font size
+  FONT_HEADER = 28      # bold section title: bus/train headers, DEBUG MODE
+
+  # Header (shared by boot screen, main view, debug screen)
+  HEADER_ICON_X = 15
+  HEADER_ICON_Y = 5
+  HEADER_ICON_SIZE = 50
+  HEADER_DIVIDER_Y = 55
+  HEADER_TEXT_Y = 18
+  COLUMN_DIVIDER_TOP_Y = 60
+  TRAIN_COLUMN_INDENT = 20
+
+  # Bus section
+  BUS_SECTION_X = 20
+  BUS_BOX_TOP_GAP = 10
+  BUS_TIMES_X = 200
+  BUS_LOAD_ICON_X = 195
+  BUS_LOAD_TEXT_X = 213
+  BUS_LOAD_BAR_X1 = 150
+  BUS_LOAD_BAR_X2 = 170
+  JOURNEY_ICON_X = 25
+  JOURNEY_HEADER_GAP = 35
+  LOAD_TEXT_Y_NUDGE = 8
+  JOURNEY_Y_GAP = 8
+
+  # Train section
+  TRAIN_SECTION_Y_OFFSET = 70
+  TRAIN_LINE_SPACING = 32
+  TRAIN_LINE_SPACING_SMALL = 28
+  TRAIN_WRAP_WIDTH = 22
+  TRAIN_STATION_LINE_SPACING = 24
+  TRAIN_ALERT_LINE_SPACING = 22
+  TRAIN_DISRUPTION_GAP = 15
+  ALERT_SECTION_GAP = 10
+  ALERT_POST_DIVIDER_GAP = 15
+
+  # Weather section
+  WEATHER_POST_DIVIDER_GAP = 15
+  WEATHER_HEADER_GAP = 28
+
+  # Screen edges
+  SCREEN_MARGIN = 10
+  TEXT_RIGHT_MARGIN = 15
   ```
+
+  Note: `TRAIN_SECTION_Y_OFFSET` is a deliberately separate constant from `BUS_BOX_Y_OFFSET`, even though both are currently `70` — the bus and train columns are independently tunable, not the same value by design.
 
 - **Column split**: `column_offset = epd.width // 2` = 400. Left column = bus arrivals. Right column = train status (top) + weather (bottom).
 

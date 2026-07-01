@@ -71,6 +71,55 @@ FONT_SMALL = 12
 FONT_MEDIUM = 16
 FONT_LARGE = 24
 FONT_XLARGE = 32
+FONT_TIMESTAMP = 18  # timestamp, journey-time line, boot "Booted:" text
+FONT_SECTION = 20    # weather header (bold) / train body font size
+FONT_HEADER = 28     # bold section title font size: bus/train headers, DEBUG MODE
+
+# Header layout (shared by the boot screen, main view, and debug screen)
+HEADER_ICON_X = 15
+HEADER_ICON_Y = 5
+HEADER_ICON_SIZE = 50
+HEADER_DIVIDER_Y = 55  # y of the divider line under both column headers
+HEADER_TEXT_Y = 18     # y of both column header titles ("Bus Stop" / "Train Status")
+COLUMN_DIVIDER_TOP_Y = 60  # y where the center vertical divider starts (below the header row)
+TRAIN_COLUMN_INDENT = 20   # x indent of the train column from the center divider
+
+# Bus section layout
+BUS_SECTION_X = 20        # left x for the bus number box and journey divider
+BUS_BOX_TOP_GAP = 10      # gap between a row's y and its box_top
+BUS_TIMES_X = 200         # x for the arrival-times text (also the load-text fallback x)
+BUS_LOAD_ICON_X = 195
+BUS_LOAD_TEXT_X = 213
+BUS_LOAD_BAR_X1 = 150
+BUS_LOAD_BAR_X2 = 170
+JOURNEY_ICON_X = 25       # x for journey-related MDI icons (map-marker, timer)
+JOURNEY_HEADER_GAP = 35   # vertical space reserved for the optional journey destination header
+LOAD_TEXT_Y_NUDGE = 8     # vertical centering correction for the load text/bar
+JOURNEY_Y_GAP = 8         # gap below a bus box before its journey-time line
+
+# Train section layout
+TRAIN_SECTION_Y_OFFSET = 70      # y_offset start for train content, below HEADER_DIVIDER_Y
+TRAIN_LINE_SPACING = 32          # vertical spacing between most train status lines
+TRAIN_LINE_SPACING_SMALL = 28    # tighter spacing before "expected."/"Alert:" lines
+TRAIN_WRAP_WIDTH = 22            # textwrap width for station lists and alert content
+TRAIN_STATION_LINE_SPACING = 24
+TRAIN_ALERT_LINE_SPACING = 22
+TRAIN_DISRUPTION_GAP = 15        # gap after each disruption block
+ALERT_SECTION_GAP = 10           # gap before the "Alert:" divider line
+ALERT_POST_DIVIDER_GAP = 15      # gap after the "Alert:" divider, before the icon/label
+
+# Weather section layout
+WEATHER_POST_DIVIDER_GAP = 15  # gap after the weather divider before the header
+WEATHER_HEADER_GAP = 28        # gap after "Weather" header before the icon/temp row
+
+# Screen edges
+SCREEN_MARGIN = 10       # standard left/right margin for divider lines
+TEXT_RIGHT_MARGIN = 15   # margin subtracted for right-aligned text (timestamp/date)
+
+# Resilience / timing
+HTTP_TIMEOUT_DEFAULT = 10
+HTTP_TIMEOUT_LONG = 15
+WATCHDOG_TIMEOUT = 300
 
 # Environment variables with defaults
 API_KEY = os.getenv('API_KEY')
@@ -136,7 +185,7 @@ boot_timestamp = datetime.now()
 # ============================================================================
 class Watchdog:
     """Monitors main loop health and detects stuck processes."""
-    def __init__(self, timeout=300):
+    def __init__(self, timeout=WATCHDOG_TIMEOUT):
         self.timeout = timeout
         self.last_update = datetime.now()
         self.enabled = True
@@ -250,7 +299,7 @@ class SystemHealth:
                     f"Routing: {self.metrics['api_calls']['routing']}")
 
 # Initialize utility instances
-watchdog = Watchdog(timeout=300)
+watchdog = Watchdog(timeout=WATCHDOG_TIMEOUT)
 backoff_manager = BackoffManager()
 system_health = SystemHealth()
 
@@ -539,7 +588,7 @@ def get_bus_arrival(bus_stop_code, force_refresh=False):
     }
     
     try:
-        response = http_session.get(url, headers=headers, timeout=10)
+        response = http_session.get(url, headers=headers, timeout=HTTP_TIMEOUT_DEFAULT)
         response.raise_for_status()
         data = response.json()
         
@@ -588,7 +637,7 @@ def get_bus_stop_coordinates(bus_stop_code):
     }
     
     try:
-        response = http_session.get(url, headers=headers, timeout=15)
+        response = http_session.get(url, headers=headers, timeout=HTTP_TIMEOUT_LONG)
         response.raise_for_status()
         data = response.json()
         
@@ -632,7 +681,7 @@ def calculate_journey_time_onemap(origin_lat, origin_lon, destination, departure
         # Headers for search (no auth needed for search)
         search_headers = {}
         
-        response = http_session.get(search_url, params=search_params, headers=search_headers, timeout=10)
+        response = http_session.get(search_url, params=search_params, headers=search_headers, timeout=HTTP_TIMEOUT_DEFAULT)
         response.raise_for_status()
         search_data = response.json()
         
@@ -664,7 +713,7 @@ def calculate_journey_time_onemap(origin_lat, origin_lon, destination, departure
             route_headers['Authorization'] = ONEMAP_API_KEY
             logging.debug("Using OneMap API key for authentication")
         
-        response = http_session.get(route_url, params=route_params, headers=route_headers, timeout=15)
+        response = http_session.get(route_url, params=route_params, headers=route_headers, timeout=HTTP_TIMEOUT_LONG)
         response.raise_for_status()
         route_data = response.json()
         
@@ -722,7 +771,7 @@ def calculate_journey_time_google(origin_lat, origin_lon, destination, departure
             'region': 'sg'
         }
         
-        response = http_session.get(url, params=params, timeout=15)
+        response = http_session.get(url, params=params, timeout=HTTP_TIMEOUT_LONG)
         response.raise_for_status()
         data = response.json()
         
@@ -854,7 +903,7 @@ def get_train_disruptions(force_refresh=False):
     }
     
     try:
-        response = http_session.get(url, headers=headers, timeout=10)
+        response = http_session.get(url, headers=headers, timeout=HTTP_TIMEOUT_DEFAULT)
         response.raise_for_status()
         data = response.json()
         
@@ -922,7 +971,7 @@ def get_weather_from_homeassistant(force_refresh=False):
     }
     
     try:
-        response = http_session.get(url, headers=headers, timeout=10)
+        response = http_session.get(url, headers=headers, timeout=HTTP_TIMEOUT_DEFAULT)
         response.raise_for_status()
         data = response.json()
         
@@ -1018,52 +1067,52 @@ def draw_timestamp(draw_r, epd_width, x=None, y=10, manual=False):
     formatted_time = now.strftime("%H:%M")
     formatted_date = now.strftime("%d %b %Y")
     
-    timestamp_font = get_font(18)
-    small_font = get_font(12)
-    
+    timestamp_font = get_font(FONT_TIMESTAMP)
+    small_font = get_font(FONT_SMALL)
+
     time_text = f"Updated: {formatted_time}"
     if manual:
         time_text += " ★"
-    
+
     if x is None:
         bbox = timestamp_font.getbbox(time_text)
         text_width = bbox[2] - bbox[0]
-        x = epd_width - text_width - 15
-    
+        x = epd_width - text_width - TEXT_RIGHT_MARGIN
+
     draw_r.text((x, y), time_text, font=timestamp_font, fill=0)
-    
+
     bbox = small_font.getbbox(formatted_date)
     date_width = bbox[2] - bbox[0]
-    date_x = epd_width - date_width - 15
+    date_x = epd_width - date_width - TEXT_RIGHT_MARGIN
     draw_r.text((date_x, y + 22), formatted_date, font=small_font, fill=0)
 
 def draw_bus_section(draw, draw_r, bus_info, font, y_start, load_font, journey_times=None):
     """Draw the bus arrival section with journey times and destination header."""
     y = y_start
     bus_number_font = get_font_bold(BUS_NUMBER_FONT_SIZE)
-    journey_font = get_font(18)
-    dest_header_font = get_font(16)
-    
+    journey_font = get_font(FONT_TIMESTAMP)
+    dest_header_font = get_font(FONT_MEDIUM)
+
     # Get display name for destination
     dest_display = JOURNEY_DESTINATION_SHORT if JOURNEY_DESTINATION_SHORT else JOURNEY_DESTINATION
     if len(dest_display) > 25:
         dest_display = dest_display[:22] + "..."
-    
+
     # Draw destination header at top if journey time is enabled
     if SHOW_JOURNEY_TIME and journey_times and dest_display:
         header_y = y
-        draw_mdi_icon(draw_r, 25, header_y, MDI.MAP_MARKER_DISTANCE, size=20, color=0)
+        draw_mdi_icon(draw_r, JOURNEY_ICON_X, header_y, MDI.MAP_MARKER_DISTANCE, size=20, color=0)
         draw.text((50, header_y + 2), f"Journeys to: {dest_display}", font=dest_header_font, fill=0)
-        draw.line((20, header_y + 26, 400, header_y + 26), fill=0, width=1)
-        y += 35
-    
+        draw.line((BUS_SECTION_X, header_y + 26, 400, header_y + 26), fill=0, width=1)
+        y += JOURNEY_HEADER_GAP
+
     for service_no, arrival_times, load_rates in bus_info:
         # Draw bus number box
-        box_top = y + 10
+        box_top = y + BUS_BOX_TOP_GAP
         box_height = BUS_BOX_HEIGHT
         box_center_y = box_top + (box_height / 2)
-        
-        draw.rectangle((20, box_top, 20 + BUS_BOX_WIDTH, box_top + box_height), fill=0)
+
+        draw.rectangle((BUS_SECTION_X, box_top, BUS_SECTION_X + BUS_BOX_WIDTH, box_top + box_height), fill=0)
         
         # Bus number
         bus_bbox = bus_number_font.getbbox(service_no)
@@ -1083,42 +1132,42 @@ def draw_bus_section(draw, draw_r, bus_info, font, y_start, load_font, journey_t
         times_bbox = font.getbbox(times_text)
         times_text_height = times_bbox[3] - times_bbox[1]
         times_text_y = box_center_y - (times_text_height / 2)
-        draw.text((200, times_text_y), times_text, font=font, fill=0)
-        
+        draw.text((BUS_TIMES_X, times_text_y), times_text, font=font, fill=0)
+
         # Load indicator with icon - UPDATED
         if load_rates:
             load_code = load_rates[0]
             load_text = BUS_LOAD_MAP_TEXT.get(load_code, '?')
             load_size = BUS_LOAD_MAP_SIZE.get(load_code, 0)
             load_icon = BUS_LOAD_MAP_ICON.get(load_code)
-            
+
             # Calculate vertical center for load text
             load_bbox = load_font.getbbox(load_text)
             load_text_height = load_bbox[3] - load_bbox[1]
-            load_text_y = box_center_y + (box_height / 4) - (load_text_height / 2) + 8
-            
+            load_text_y = box_center_y + (box_height / 4) - (load_text_height / 2) + LOAD_TEXT_Y_NUDGE
+
             # Draw load icon in red (before text)
             if load_icon:
-                draw_mdi_icon(draw_r, 195, load_text_y - 2, load_icon, size=16, color=0)
+                draw_mdi_icon(draw_r, BUS_LOAD_ICON_X, load_text_y - 2, load_icon, size=LOAD_FONT_SIZE, color=0)
                 # Draw load text after icon (adjusted position)
-                draw_r.text((213, load_text_y), load_text, font=load_font, fill=0)
+                draw_r.text((BUS_LOAD_TEXT_X, load_text_y), load_text, font=load_font, fill=0)
             else:
                 # Fallback if no icon
-                draw_r.text((200, load_text_y), load_text, font=load_font, fill=0)
-            
+                draw_r.text((BUS_TIMES_X, load_text_y), load_text, font=load_font, fill=0)
+
             # Draw load bar
-            draw.rectangle((150, box_top + 5, 170, box_top + box_height - 5), fill=255)
-            draw_r.rectangle((150, box_top + box_height - 5 - load_size // 2, 
-                            170, box_top + box_height - 5), fill=0)
-        
+            draw.rectangle((BUS_LOAD_BAR_X1, box_top + 5, BUS_LOAD_BAR_X2, box_top + box_height - 5), fill=255)
+            draw_r.rectangle((BUS_LOAD_BAR_X1, box_top + box_height - 5 - load_size // 2,
+                            BUS_LOAD_BAR_X2, box_top + box_height - 5), fill=0)
+
         # Draw journey time if available
         if journey_times and service_no in journey_times:
             details = journey_times[service_no]
-            
-            journey_y = box_top + box_height + 8
-            
+
+            journey_y = box_top + box_height + JOURNEY_Y_GAP
+
             # Red timer icon
-            draw_mdi_icon(draw_r, 25, journey_y, MDI.TIMER, size=18, color=0)
+            draw_mdi_icon(draw_r, JOURNEY_ICON_X, journey_y, MDI.TIMER, size=18, color=0)
             
             # Black journey text
             journey_text = f"{details['total_time']}min (arrive ~{details['arrival_time']})"
@@ -1137,13 +1186,13 @@ def draw_weather_section_right(draw, draw_r, weather_info, x_start, epd_width, e
     weather_y = epd_height - WEATHER_SECTION_HEIGHT
     
     # Draw separator line
-    draw_r.line((x_start, weather_y, epd_width - 10, weather_y), fill=0, width=1)
-    weather_y += 15
-    
+    draw_r.line((x_start, weather_y, epd_width - SCREEN_MARGIN, weather_y), fill=0, width=1)
+    weather_y += WEATHER_POST_DIVIDER_GAP
+
     # Weather header
-    weather_header_font = get_font_bold(20)
+    weather_header_font = get_font_bold(FONT_SECTION)
     draw.text((x_start, weather_y), "Weather", font=weather_header_font, fill=0)
-    weather_y += 28
+    weather_y += WEATHER_HEADER_GAP
     
     # Draw weather icon
     weather_icon = get_weather_icon(weather_info.get('condition'))
@@ -1162,50 +1211,50 @@ def draw_weather_section_right(draw, draw_r, weather_info, x_start, epd_width, e
     humidity = weather_info.get('humidity')
     if humidity:
         draw_mdi_icon(draw_r, x_start, weather_y + 65, MDI.WATER_PERCENT, size=18, color=0)
-        draw_r.text((x_start + 23, weather_y + 65), f"{humidity}%", font=get_font(14), fill=0)
+        draw_r.text((x_start + 23, weather_y + 65), f"{humidity}%", font=get_font(BOTTOM_FONT_SIZE), fill=0)
 
 def draw_train_section(draw, draw_r, train_info, train_x, epd_width, epd_height):
     """Draw the train disruption section and return final y position."""
-    train_font = get_font(20)
-    train_header_font = get_font_bold(28)
-    
+    train_font = get_font(FONT_SECTION)
+    train_header_font = get_font_bold(FONT_HEADER)
+
     draw_mdi_icon(draw, train_x - 5, 8, MDI.SUBWAY, size=40, color=0)
-    
-    draw_r.text((train_x + 45, 18), "Train Status", font=train_header_font, fill=0)
-    draw_r.line((train_x, 55, epd_width - 10, 55), fill=0, width=1)
-    
-    y_offset = 70
-    
+
+    draw_r.text((train_x + 45, HEADER_TEXT_Y), "Train Status", font=train_header_font, fill=0)
+    draw_r.line((train_x, HEADER_DIVIDER_Y, epd_width - SCREEN_MARGIN, HEADER_DIVIDER_Y), fill=0, width=1)
+
+    y_offset = TRAIN_SECTION_Y_OFFSET
+
     if train_info == "No Disruptions Today!":
         draw_mdi_icon(draw_r, train_x, y_offset, MDI.CHECK_CIRCLE, size=24, color=0)
-        
+
         draw.text((train_x + 30, y_offset + 2), "All trains running", font=train_font, fill=0)
-        y_offset += 32
+        y_offset += TRAIN_LINE_SPACING
         draw.text((train_x + 30, y_offset), "smoothly today!", font=train_font, fill=0)
-        y_offset += 32
+        y_offset += TRAIN_LINE_SPACING
         draw.text((train_x + 30, y_offset), "No disruptions", font=train_font, fill=0)
-        y_offset += 28
+        y_offset += TRAIN_LINE_SPACING_SMALL
         draw.text((train_x + 30, y_offset), "expected.", font=train_font, fill=0)
-        y_offset += 32
+        y_offset += TRAIN_LINE_SPACING
     elif train_info:
         for disruption in train_info['disruptions']:
             draw_mdi_icon(draw_r, train_x, y_offset, MDI.ALERT_CIRCLE, size=20, color=0)
-            
-            draw_r.text((train_x + 25, y_offset), f"Line: {disruption['Line']}", 
+
+            draw_r.text((train_x + 25, y_offset), f"Line: {disruption['Line']}",
                        font=train_font, fill=0)
-            y_offset += 32
-            
-            draw.text((train_x + 25, y_offset), f"Dir: {disruption['Direction']}", 
+            y_offset += TRAIN_LINE_SPACING
+
+            draw.text((train_x + 25, y_offset), f"Dir: {disruption['Direction']}",
                      font=train_font, fill=0)
-            y_offset += 32
-            
+            y_offset += TRAIN_LINE_SPACING
+
             stations = ", ".join(disruption['Stations'])
-            wrapped_stations = textwrap.wrap(stations, width=22)
+            wrapped_stations = textwrap.wrap(stations, width=TRAIN_WRAP_WIDTH)
             for line in wrapped_stations[:2]:
-                draw.text((train_x + 25, y_offset), line, font=get_font(16), fill=0)
-                y_offset += 24
-            
-            y_offset += 15
+                draw.text((train_x + 25, y_offset), line, font=get_font(FONT_MEDIUM), fill=0)
+                y_offset += TRAIN_STATION_LINE_SPACING
+
+            y_offset += TRAIN_DISRUPTION_GAP
 
             # Stop if getting too long to leave room for weather (which starts
             # at epd_height - WEATHER_SECTION_HEIGHT in the same column)
@@ -1213,18 +1262,18 @@ def draw_train_section(draw, draw_r, train_info, train_x, epd_width, epd_height)
                 break
 
         if train_info.get('content') and y_offset < epd_height - WEATHER_SECTION_HEIGHT + 20:
-            y_offset += 10
-            draw_r.line((train_x, y_offset, epd_width - 10, y_offset), fill=0, width=1)
-            y_offset += 15
-            
+            y_offset += ALERT_SECTION_GAP
+            draw_r.line((train_x, y_offset, epd_width - SCREEN_MARGIN, y_offset), fill=0, width=1)
+            y_offset += ALERT_POST_DIVIDER_GAP
+
             draw_mdi_icon(draw_r, train_x, y_offset, MDI.ALERT, size=18, color=0)
-            draw_r.text((train_x + 22, y_offset), "Alert:", font=get_font(16), fill=0)
-            y_offset += 28
-            
-            wrapped_text = textwrap.wrap(train_info['content'], width=22)
+            draw_r.text((train_x + 22, y_offset), "Alert:", font=get_font(FONT_MEDIUM), fill=0)
+            y_offset += TRAIN_LINE_SPACING_SMALL
+
+            wrapped_text = textwrap.wrap(train_info['content'], width=TRAIN_WRAP_WIDTH)
             for line in wrapped_text[:3]:
-                draw.text((train_x + 25, y_offset), line, font=get_font(14), fill=0)
-                y_offset += 22
+                draw.text((train_x + 25, y_offset), line, font=get_font(BOTTOM_FONT_SIZE), fill=0)
+                y_offset += TRAIN_ALERT_LINE_SPACING
     
     return y_offset  # Return final position
 
@@ -1235,29 +1284,29 @@ def display_combined_view(display_mgr, font, bus_info, train_info, weather_info,
     draw, draw_r = display_mgr.clear_images()
     epd = display_mgr.epd
     
-    column_offset = epd.width // 2
+    column_offset = int(epd.width * COLUMN_WIDTH_RATIO)
     load_font = get_font(LOAD_FONT_SIZE)
-    bus_header_font = get_font_bold(28)
-    
+    bus_header_font = get_font_bold(FONT_HEADER)
+
     mqtt_connected = mqtt_client.connected if mqtt_client else False
-    
-    draw_mdi_icon(draw, 15, 5, MDI.BUS_MARKER, size=50, color=0)
+
+    draw_mdi_icon(draw, HEADER_ICON_X, HEADER_ICON_Y, MDI.BUS_MARKER, size=HEADER_ICON_SIZE, color=0)
     draw_timestamp(draw_r, epd.width, manual=manual_refresh)
-    
+
     if mqtt_connected:
-        draw_mdi_icon(draw_r, epd.width - 70, epd.height - 70, MDI.HOME_AUTOMATION, size=50, color=0)
-    
-    draw_r.line((column_offset, 60, column_offset, epd.height - 10), 
+        draw_mdi_icon(draw_r, epd.width - 70, epd.height - 70, MDI.HOME_AUTOMATION, size=HEADER_ICON_SIZE, color=0)
+
+    draw_r.line((column_offset, COLUMN_DIVIDER_TOP_Y, column_offset, epd.height - SCREEN_MARGIN),
                 fill=0, width=DIVIDER_WIDTH)
-    
+
     # ========== LEFT COLUMN: BUS ARRIVALS ONLY ==========
-    draw_r.text((80, 18), HEADER_A, font=bus_header_font, fill=0)
-    draw_r.line((10, 55, column_offset - 10, 55), fill=0, width=1)
-    
+    draw_r.text((80, HEADER_TEXT_Y), HEADER_A, font=bus_header_font, fill=0)
+    draw_r.line((SCREEN_MARGIN, HEADER_DIVIDER_Y, column_offset - SCREEN_MARGIN, HEADER_DIVIDER_Y), fill=0, width=1)
+
     final_bus_y = draw_bus_section(draw, draw_r, bus_info, font, BUS_BOX_Y_OFFSET, load_font, journey_times)
-    
+
     # ========== RIGHT COLUMN: TRAIN STATUS AND WEATHER ==========
-    train_x = column_offset + 20
+    train_x = column_offset + TRAIN_COLUMN_INDENT
     
     # Draw train status
     final_train_y = draw_train_section(draw, draw_r, train_info, train_x, epd.width, epd.height)
@@ -1274,14 +1323,14 @@ def display_debug_screen(display_mgr, boot_time):
     draw, draw_r = display_mgr.clear_images()
     epd = display_mgr.epd
     
-    draw_mdi_icon(draw, 15, 5, MDI.BUS_MARKER, size=40, color=0)
-    draw_r.text((70, 15), "DEBUG MODE", font=get_font_bold(28), fill=0)
-    draw_r.line((10, 50, epd.width - 10, 50), fill=0, width=2)
-    
+    draw_mdi_icon(draw, HEADER_ICON_X, HEADER_ICON_Y, MDI.BUS_MARKER, size=40, color=0)
+    draw_r.text((70, 15), "DEBUG MODE", font=get_font_bold(FONT_HEADER), fill=0)
+    draw_r.line((SCREEN_MARGIN, 50, epd.width - SCREEN_MARGIN, 50), fill=0, width=DIVIDER_WIDTH)
+
     debug_font = get_font(11)
     y_pos = 60
     line_spacing = 17
-    column_split = epd.width // 2
+    column_split = int(epd.width * COLUMN_WIDTH_RATIO)
     
     left_vars = [
         f"Boot: {boot_time}",
@@ -1326,9 +1375,9 @@ def display_debug_screen(display_mgr, boot_time):
             draw.text((column_split + 10, y), var, font=debug_font, fill=0)
         y += line_spacing
     
-    draw_r.text((15, epd.height - 25), 
-               "Displaying for 5 seconds...", 
-               font=get_font(14), fill=0)
+    draw_r.text((15, epd.height - 25),
+               "Displaying for 5 seconds...",
+               font=get_font(BOTTOM_FONT_SIZE), fill=0)
     
     display_mgr.display()
     logging.info("DEBUG MODE: Displaying environment variables for 5 seconds")
@@ -1446,11 +1495,11 @@ def main():
             draw, draw_r = display_mgr.clear_images()
             boot_font = get_font_bold(FONT_LARGE)
             
-            draw_mdi_icon(draw, 15, 5, MDI.BUS_MARKER, size=50, color=0)
-            
-            draw.text((85, 18), "System Starting...", font=boot_font, fill=0)
-            draw_r.text((epd.width // 2 - 100, epd.height // 2), 
-                       f"Booted: {boot_time}", font=get_font(18), fill=0)
+            draw_mdi_icon(draw, HEADER_ICON_X, HEADER_ICON_Y, MDI.BUS_MARKER, size=HEADER_ICON_SIZE, color=0)
+
+            draw.text((85, HEADER_TEXT_Y), "System Starting...", font=boot_font, fill=0)
+            draw_r.text((epd.width // 2 - 100, epd.height // 2),
+                       f"Booted: {boot_time}", font=get_font(FONT_TIMESTAMP), fill=0)
             
             display_mgr.display()
         
