@@ -6,7 +6,8 @@ import tests  # noqa: F401 (adds app/ to sys.path)
 from render.daytime_screen import time_in_words, build_daytime_model
 
 WEATHER = {'temperature': 29, 'condition': 'partlycloudy', 'humidity': 68,
-           'wind_speed': 10.0, 'forecast': [], 'psi': 57}
+           'wind_speed': 10.0, 'forecast': [],
+           'aqi': 57, 'aqi_label': 'AQI', 'aqi_category': 'Moderate'}
 
 
 class TestTimeInWords(unittest.TestCase):
@@ -35,7 +36,7 @@ class TestBuildDaytimeModel(unittest.TestCase):
         self.assertEqual(model['date'], "Thursday 2 July")
         self.assertEqual(model['weather'], WEATHER)
         self.assertEqual(model['bucket'],
-                         ('2026-07-02', 14, 0, (29, 'partlycloudy', 68, 57)))
+                         ('2026-07-02', 14, 0, (29, 'partlycloudy', 68, 57, 'Moderate')))
 
     def test_bucket_stable_within_a_quarter(self):
         a = build_daytime_model(datetime(2026, 7, 2, 14, 15), WEATHER)
@@ -59,8 +60,8 @@ class TestBuildDaytimeModel(unittest.TestCase):
         b = build_daytime_model(datetime(2026, 7, 2, 14, 0), warmer)
         self.assertNotEqual(a['bucket'], b['bucket'])
 
-    def test_psi_change_changes_bucket(self):
-        hazier = dict(WEATHER, psi=105)
+    def test_aqi_change_changes_bucket(self):
+        hazier = dict(WEATHER, aqi=105, aqi_category='Unhealthy')
         a = build_daytime_model(datetime(2026, 7, 2, 14, 0), WEATHER)
         b = build_daytime_model(datetime(2026, 7, 2, 14, 0), hazier)
         self.assertNotEqual(a['bucket'], b['bucket'])
