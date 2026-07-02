@@ -128,6 +128,9 @@ See `design.md` for the design rationale behind each phase.
       toggle, and the section's fields greyed out (visible but not editable) until the
       integration is enabled. Would need per-category enable flags in `CONFIG_SCHEMA`
       plus a little template/JS to toggle the disabled state.
+- [ ] Show the web_config panel's own uptime in the status bar, alongside the display
+      service's — cheap: record a module-level start timestamp at web_config.py import,
+      include it in `/api/status`'s JSON, render next to "Display Service" in the bar.
 
 ## Phase 4 — Dynamic (no-restart) config reload for the schedule and `FORCE_SCREEN`
 
