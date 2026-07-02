@@ -340,21 +340,28 @@ def api_font_sample(font_name):
 @app.route('/api/restart', methods=['POST'])
 @login_required
 def api_restart():
-    """Restart the bus_display systemd service — required for most .env
-    changes to take effect (config is loaded once at process start; the
+    """Queue a restart of the bus_display systemd service — required for most
+    .env changes to take effect (config is loaded once at process start; the
     schedule and FORCE_SCREEN are the exceptions, applying live via the
     config_reload mechanism). Requires a one-time passwordless-sudo setup;
-    see systemd/bus_display_restart.sudoers.example."""
+    see systemd/bus_display_restart.sudoers.example.
+
+    Uses `--no-block` so this request returns as soon as the job is queued,
+    rather than waiting for bus_display to fully stop and come back up —
+    `systemctl restart` (no --no-block) blocks the whole request on that,
+    and its shutdown path (MQTT disconnect, e-ink cleanup) can comfortably
+    exceed a short HTTP timeout even though nothing is actually wrong. The
+    status bar's uptime is what confirms the restart actually completed."""
     try:
         subprocess.run(
-            ['sudo', 'systemctl', 'restart', 'bus_display'],
-            capture_output=True, text=True, timeout=15, check=True,
+            ['sudo', 'systemctl', 'restart', '--no-block', 'bus_display'],
+            capture_output=True, text=True, timeout=10, check=True,
         )
         return jsonify({'success': True})
     except subprocess.TimeoutExpired:
         return jsonify({
             'success': False,
-            'error': 'Restart command timed out after 15s. Check `systemctl status bus_display` on the Pi.',
+            'error': 'Could not queue the restart (sudo/systemctl unresponsive). Check `systemctl status bus_display` on the Pi.',
         }), 500
     except subprocess.CalledProcessError as e:
         return jsonify({

@@ -8,4 +8,12 @@
 #   sudo visudo -c   # validates syntax before it takes effect
 #
 # Adjust the username below if web_config.py runs as a different user.
-pi ALL=(ALL) NOPASSWD: /bin/systemctl restart bus_display
+#
+# --no-block: web_config.py's /api/restart queues the restart and returns
+# immediately rather than blocking on the full stop+start cycle (which can
+# comfortably exceed a short HTTP timeout even when nothing is wrong).
+# sudoers matches the command line exactly, so this entry must include it —
+# if you're updating from an older install that only allowed the plain
+# `restart bus_display` form, re-run the install steps above to pick up
+# this line.
+pi ALL=(ALL) NOPASSWD: /bin/systemctl restart --no-block bus_display

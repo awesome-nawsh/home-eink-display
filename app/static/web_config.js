@@ -86,7 +86,7 @@ function triggerRestart() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                alert('✓ Service restart triggered!');
+                alert('✓ Restart queued — check the status bar in a few seconds to confirm it came back up.');
             } else {
                 alert('✗ Failed to restart: ' + data.error);
             }
