@@ -7,8 +7,9 @@ requests
 # Environment config
 python-dotenv
 
-# MQTT (Home Assistant integration)
-paho-mqtt
+# MQTT (Home Assistant integration) — mqtt_client.py uses the 2.x callback
+# API (CallbackAPIVersion.VERSION2), which doesn't exist in 1.x
+paho-mqtt>=2.0
 
 # Web config panel (web_config.py)
 flask

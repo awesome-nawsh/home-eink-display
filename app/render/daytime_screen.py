@@ -1,5 +1,6 @@
-"""daytime_screen: placeholder for the lowest-precedence of the three
-scheduled screens. Currently just a centered "Day time screen" message —
+"""daytime_screen: placeholder, third of the four screens in precedence
+(above only ha_screen; it's also the fallback when no screen's window covers
+the current time). Currently just a centered "Day time screen" message —
 real content is deferred to a later phase (see todo.md).
 """
 import logging

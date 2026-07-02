@@ -2,6 +2,31 @@
 
 ## [V14] - Rewrite in progress (branch `v14-rewrite`)
 
+### Post-Phase-4 review pass (branch `v14-review-fixes`)
+
+A three-reviewer code audit of the whole codebase (comments/readability, Pi-Zero efficiency, stale/redundant code), with each fix individually approved before implementation.
+
+**Bug fixes:**
+- A failed `ha_screen` dashboard fetch now genuinely retries on the next tick — previously the screen was marked active anyway, so the "will retry" log message was a lie and the panel kept the previous image until the window ended.
+- `get_bus_stop_coordinates()` no longer memoizes a failed lookup — a transient network blip during the first journey calculation used to disable journey times until a service restart (`lru_cache` cached the `None`).
+- The web UI's "applies live — no restart needed" flash message can now actually appear: `save_config` diffs submitted values against the current `.env` instead of counting every field as changed on every save.
+- `paho-mqtt` pinned `>=2.0` and `mqtt_client.py` migrated to the v2 callback API — fresh installs get paho 2.x, where the old v1 constructor call crashed at startup. Also `connect_async()` so a broker that's down at boot self-heals when it returns (previously MQTT stayed dead for the life of the process).
+
+**Resilience:**
+- **Stale-data policy** (new `STALE_DATA_MAX_AGE`, default 600s): during an LTA outage, bus/train keep showing last-known-good data up to that age, then the display shows an explicit "data unavailable" error for that section — previously it silently went blank after 20 seconds. A genuinely empty response (no buses running) still renders blank; it's data, not an error. Weather serves stale readings indefinitely (ages gracefully) via the same new `DataCache.get_stale()` API instead of poking cache internals.
+- **Real watchdog**: the in-process `Watchdog` class was structurally inert (fed and checked itself from the same thread — could never detect a hang) and is replaced by systemd's `Type=notify` + `WatchdogSec=900` with `sd_notify('WATCHDOG=1')` pings from the loop. Deploying this needs `sudo systemctl daemon-reload` after pulling the new unit file.
+- The journey-time cache no longer grows unboundedly (timestamped keys are pruned each cycle), and `fetch_data_parallel()` reuses one thread pool instead of creating one per tick.
+
+**New: live service status in the web panel** — `main.py` writes a per-tick health snapshot (uptime, active screen, day-type, MQTT state, API counters) to `STATUS_FILE_PATH` (default `/tmp/bus_display_status.json`); `/api/status` serves it and the Settings page status bar shows it (replacing a hardcoded "✓ Loaded").
+
+**Renames/config:**
+- `SLEEP_SCREEN_*` → `HA_SCREEN_*` (these six vars configure `ha_screen`, not the true sleep screen). Old names still read as fallbacks; `tools/migrate_env.py` copies them forward; the web UI gains an "ha_screen (Dashboard Screenshot)" section. The previously-dead `SLEEP_SCREEN_FORMAT` is now actually used (as `HA_SCREEN_FORMAT`).
+- The debug screen shows the real `schedule_config.json` windows and today's resolved day-type instead of legacy `WAKE_HOUR`/`SLEEP_HOUR` and hardcoded "APIs configured"/"Routing ready" filler.
+
+**Web hardening:** CSRF is now default-deny (every POST checked unless explicitly exempted); `/logout` is a CSRF-protected POST instead of a GET a cross-site image tag could trigger.
+
+**Cleanups:** overlap warnings computed once per schedule load instead of every 30s tick (`resolve_active_screen()` now returns just the screen name); the duplicated debug/bus-train fetch-render block in `main.py` extracted to one helper; assorted stale comments fixed (ha_screen precedence docstring, pre-Phase-4 restart claims, leftover truncation marker); bare `except:` → `except OSError` in font loaders; `KNOWN_BAD_SECRET_KEYS` shared from one module; a tautological scheduler test now asserts a real value.
+
 ### Phase 4 — Dynamic (no-restart) config reload for the schedule and `FORCE_SCREEN`
 
 Since Phase 1, config is loaded once at process start; changing anything meant a restart (a one-click action since Phase 3's `/api/restart`, but still a restart). This phase makes exactly two things reloadable live, without one — deliberately not "everything," since retrofitting dotted `config.SOMEVAR` lookups across every module for variables nobody's asked to change without a restart would be a large, invasive rewrite for no real benefit. See `design.md` §15 for the full rationale.

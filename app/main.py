@@ -15,7 +15,7 @@ from datetime import datetime
 
 import config
 from config import *
-from health import watchdog, system_health
+from health import system_health, sd_notify
 from fetchers import cache, fetch_data_parallel, http_session, get_day_type_sensors
 from mqtt_client import MQTTClient
 from render.common import DisplayManager, get_font
@@ -25,7 +25,7 @@ from render.ha_screen import display_ha_screen
 from render.sleep_screen import display_sleep_screen
 from render.daytime_screen import display_daytime_screen
 from render.boot_screen import display_boot_checklist
-from scheduler import load_schedule_config, resolve_active_screen, get_next_wake_time
+from scheduler import load_schedule_config, resolve_active_screen, get_next_wake_time, detect_overlaps
 from day_type import day_type_cache, resolve_todays_day_type
 from reload_watch import get_mtime, has_changed
 
@@ -70,6 +70,35 @@ signal.signal(signal.SIGTERM, signal_handler)
 # ============================================================================
 # MAIN LOOP
 # ============================================================================
+def load_schedule_and_log_overlaps(path):
+    """Load the schedule and log its overlap warnings once. Warnings only
+    change when the schedule file changes, so they're computed here (at
+    startup and on each dynamic reload) rather than every loop tick."""
+    schedule = load_schedule_config(path, WAKE_HOUR, SLEEP_HOUR)
+    for warning in detect_overlaps(schedule):
+        logging.warning(f"Schedule conflict: {warning}")
+    return schedule
+
+
+def run_bus_train_tick(display_mgr, default_font, mqtt_client, manual_refresh, stats_counter):
+    """One fetch+render+publish cycle for the bus/train view — shared by the
+    normal bus_train_screen branch and DEBUG_SKIP_TIME_CHECK mode so the two
+    can't drift. Returns the updated stats_counter."""
+    bus_info, train_info, weather_info, journey_times = fetch_data_parallel(force_refresh=manual_refresh)
+    display_combined_view(display_mgr, default_font, bus_info, train_info, weather_info,
+                          journey_times=journey_times, manual_refresh=manual_refresh, mqtt_client=mqtt_client)
+
+    if mqtt_client:
+        mqtt_client.publish_status("idle")
+
+    stats_counter += 1
+    if stats_counter >= 10:
+        system_health.log_stats()
+        stats_counter = 0
+    return stats_counter
+
+
+
 def main():
     """Main application loop."""
     global mqtt_client
@@ -94,7 +123,7 @@ def main():
         else:
             logging.info("Journey time tracking DISABLED")
 
-        schedule = load_schedule_config(SCHEDULE_CONFIG_PATH, WAKE_HOUR, SLEEP_HOUR)
+        schedule = load_schedule_and_log_overlaps(SCHEDULE_CONFIG_PATH)
         logging.info(f"Schedule loaded: {schedule['screens']}")
         schedule_mtime = get_mtime(SCHEDULE_CONFIG_PATH)
         env_mtime = get_mtime(config.ENV_FILE_PATH)
@@ -120,15 +149,18 @@ def main():
         default_font = get_font(BUS_NUMBER_FONT_SIZE)
         is_epd_asleep = False
         active_screen = None
-        logged_schedule_warnings = set()
         stats_counter = 0
+        day_type = None  # stays None under FORCE_SCREEN/debug; set by normal resolution
+
+        # Tell systemd startup succeeded (Type=notify) — a no-op outside systemd.
+        sd_notify('READY=1')
 
         while True:
-            watchdog.feed()
-
-            if not watchdog.check():
-                logging.critical("Watchdog detected stuck loop - restarting...")
-                return 1
+            # Watchdog ping: if these stop for WatchdogSec (bus_display.service),
+            # systemd kills and restarts the process. This replaces the old
+            # in-process Watchdog, which fed and checked itself from this same
+            # thread and so could never actually detect a hang.
+            sd_notify('WATCHDOG=1')
 
             manual_refresh = False
 
@@ -157,7 +189,7 @@ def main():
                 config.reload_dynamic_vars()
 
             if config_reload_requested.is_set() or schedule_changed:
-                schedule = load_schedule_config(SCHEDULE_CONFIG_PATH, WAKE_HOUR, SLEEP_HOUR)
+                schedule = load_schedule_and_log_overlaps(SCHEDULE_CONFIG_PATH)
                 logging.info(f"Schedule reloaded: {schedule['screens']}")
 
             config_reload_requested.clear()
@@ -169,31 +201,25 @@ def main():
                     epd.Clear()
                     is_epd_asleep = False
 
-                bus_info, train_info, weather_info, journey_times = fetch_data_parallel(force_refresh=manual_refresh)
-                display_combined_view(display_mgr, default_font, bus_info, train_info, weather_info,
-                                    journey_times=journey_times, manual_refresh=manual_refresh, mqtt_client=mqtt_client)
-
-                if mqtt_client:
-                    mqtt_client.publish_status("idle")
-
-                stats_counter += 1
-                if stats_counter >= 10:
-                    system_health.log_stats()
-                    stats_counter = 0
-
+                stats_counter = run_bus_train_tick(display_mgr, default_font, mqtt_client,
+                                                   manual_refresh, stats_counter)
                 time.sleep(WAKE_INTERVAL)
                 continue
 
             if config.FORCE_SCREEN:  # dotted access — sees live updates from reload_dynamic_vars()
-                screen_name, schedule_warnings = config.FORCE_SCREEN, []
+                screen_name = config.FORCE_SCREEN
             else:
                 day_type = resolve_todays_day_type(day_type_cache, get_day_type_sensors, DAY_TYPE_FALLBACK)
-                screen_name, schedule_warnings = resolve_active_screen(schedule, day_type, datetime.now())
+                screen_name = resolve_active_screen(schedule, day_type, datetime.now())
 
-            for warning in schedule_warnings:
-                if warning not in logged_schedule_warnings:
-                    logging.warning(f"Schedule conflict: {warning}")
-                    logged_schedule_warnings.add(warning)
+            # Health/status snapshot for the web panel's status bar
+            system_health.write_status_file(
+                STATUS_FILE_PATH,
+                mqtt_connected=mqtt_client.connected if mqtt_client else False,
+                cache_size=len(cache.cache),
+                active_screen=screen_name,
+                day_type=day_type,
+            )
 
             screen_changed = screen_name != active_screen
 
@@ -222,10 +248,14 @@ def main():
                         logging.debug("ha_screen displayed successfully")
                         epd.sleep()
                         is_epd_asleep = True
+                        active_screen = "ha_screen"
                     else:
+                        # Leave active_screen unset so screen_changed stays
+                        # True next tick and the fetch genuinely retries —
+                        # setting it here would suppress the redraw path and
+                        # make this log message a lie.
                         logging.warning("Could not display ha_screen, will retry")
-
-                active_screen = "ha_screen"
+                        active_screen = None
                 # ha_screen deliberately skips fetch_data_parallel() entirely
                 # while active — no LTA/weather polling until the schedule
                 # exits this window or a manual refresh forces a redraw.
@@ -242,19 +272,9 @@ def main():
                     mqtt_client.publish_status("awake")
 
             if screen_name == "bus_train_screen":
-                bus_info, train_info, weather_info, journey_times = fetch_data_parallel(force_refresh=manual_refresh)
-                display_combined_view(display_mgr, default_font, bus_info, train_info, weather_info,
-                                    journey_times=journey_times, manual_refresh=manual_refresh, mqtt_client=mqtt_client)
-
-                if mqtt_client:
-                    mqtt_client.publish_status("idle")
-
+                stats_counter = run_bus_train_tick(display_mgr, default_font, mqtt_client,
+                                                   manual_refresh, stats_counter)
                 active_screen = "bus_train_screen"
-
-                stats_counter += 1
-                if stats_counter >= 10:
-                    system_health.log_stats()
-                    stats_counter = 0
 
             else:  # daytime_screen — static placeholder, only redraw on entry/manual refresh
                 if screen_changed or manual_refresh:

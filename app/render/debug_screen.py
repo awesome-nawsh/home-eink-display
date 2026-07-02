@@ -4,12 +4,27 @@ import logging
 import time
 
 from config import *
+from scheduler import load_schedule_config, SCREEN_NAMES
 from render.common import get_font, get_font_bold, draw_mdi_icon, MDI
 
 
 def display_debug_screen(display_mgr, boot_time):
-    """Display debug information with all environment variables."""
+    """Display debug information: resolved config, the real schedule windows
+    (from schedule_config.json — not the legacy WAKE_HOUR/SLEEP_HOUR, which
+    are only the fallback inputs), and today's resolved day-type."""
     draw, draw_r = display_mgr.clear_images()
+
+    schedule = load_schedule_config(SCHEDULE_CONFIG_PATH, WAKE_HOUR, SLEEP_HOUR)
+    screens = schedule['screens']
+
+    try:
+        # Lazy import: pulls in fetchers/day_type (and one quick HA call)
+        # only for this dev-only screen, never at module import time.
+        from fetchers import get_day_type_sensors
+        from day_type import day_type_cache, resolve_todays_day_type
+        day_type = resolve_todays_day_type(day_type_cache, get_day_type_sensors, DAY_TYPE_FALLBACK)
+    except Exception as e:
+        day_type = f"error ({e})"
 
     draw_mdi_icon(draw, HEADER_ICON_X, HEADER_ICON_Y, MDI.BUS_MARKER, size=40, color=0)
     draw_r.text((70, 15), "DEBUG MODE", font=get_font_bold(FONT_HEADER), fill=0)
@@ -32,8 +47,7 @@ def display_debug_screen(display_mgr, boot_time):
         f"API: {ROUTING_API_PROVIDER.upper()}",
         f"Track: {','.join(BUS_SERVICES_TO_TRACK[:3])}" if BUS_SERVICES_TO_TRACK else "Track: None",
         "",
-        f"Wake: {WAKE_HOUR}:00",
-        f"Sleep: {SLEEP_HOUR}:00",
+        f"Day type: {day_type}",
     ]
 
     right_vars = [
@@ -47,8 +61,10 @@ def display_debug_screen(display_mgr, boot_time):
         f"Weather: {WEATHER_CACHE_DURATION}s",
         f"Journey: {JOURNEY_TIME_CACHE_DURATION}s",
         "",
-        f"APIs configured",
-        f"Routing ready",
+        "Schedule:",
+    ] + [
+        f"{name}: {screens[name]['start']}-{screens[name]['end']}"
+        for name in SCREEN_NAMES
     ]
 
     y = y_pos

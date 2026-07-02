@@ -37,11 +37,22 @@ def draw_timestamp(draw_r, x=None, y=10, manual=False):
     draw_r.text((SCREEN_WIDTH - TEXT_RIGHT_MARGIN, y + 22), formatted_date, font=small_font, fill=0, anchor="ra")
 
 def draw_bus_section(draw, draw_r, bus_info, font, y_start, load_font, journey_times=None):
-    """Draw the bus arrival section with journey times and destination header."""
+    """Draw the bus arrival section with journey times and destination header.
+
+    bus_info=None means the bus API is failing and nothing recent enough is
+    cached (see fetchers._stale_or_unavailable) — rendered as an explicit
+    error. An empty list is a genuine "nothing arriving" and renders blank."""
     y = y_start
     bus_number_font = get_font_bold(BUS_NUMBER_FONT_SIZE)
     journey_font = get_font(FONT_TIMESTAMP)
     dest_header_font = get_font(FONT_MEDIUM)
+
+    if bus_info is None:
+        error_y = y + BUS_BOX_TOP_GAP
+        draw_mdi_icon(draw_r, BUS_SECTION_X, error_y, MDI.ALERT_CIRCLE, size=24, color=0)
+        draw_r.text((BUS_SECTION_X + 32, error_y + 2), "Bus data unavailable", font=get_font(FONT_SECTION), fill=0)
+        draw.text((BUS_SECTION_X + 32, error_y + 30), "Bus arrival API is not responding", font=get_font(FONT_MEDIUM), fill=0)
+        return y + BUS_BOX_Y_SPACING
 
     # Get display name for destination
     dest_display = JOURNEY_DESTINATION_SHORT if JOURNEY_DESTINATION_SHORT else JOURNEY_DESTINATION
@@ -174,6 +185,18 @@ def draw_train_section(draw, draw_r, train_info, train_x):
     draw_r.line((train_x, HEADER_DIVIDER_Y, SCREEN_WIDTH - SCREEN_MARGIN, HEADER_DIVIDER_Y), fill=0, width=1)
 
     y_offset = TRAIN_SECTION_Y_OFFSET
+
+    # None means the train API is failing (fetchers._stale_or_unavailable) —
+    # distinct from "No Disruptions Today!", which is a real, good answer.
+    if train_info is None:
+        draw_mdi_icon(draw_r, train_x, y_offset, MDI.ALERT_CIRCLE, size=24, color=0)
+        draw_r.text((train_x + 30, y_offset + 2), "Train status", font=train_font, fill=0)
+        y_offset += TRAIN_LINE_SPACING
+        draw_r.text((train_x + 30, y_offset), "unavailable", font=train_font, fill=0)
+        y_offset += TRAIN_LINE_SPACING
+        draw.text((train_x + 30, y_offset), "Alerts API is not responding", font=get_font(FONT_MEDIUM), fill=0)
+        y_offset += TRAIN_LINE_SPACING
+        return y_offset
 
     if train_info == "No Disruptions Today!":
         draw_mdi_icon(draw_r, train_x, y_offset, MDI.CHECK_CIRCLE, size=24, color=0)

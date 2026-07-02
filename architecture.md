@@ -33,7 +33,7 @@ Technical breakdown of how the system is put together. Companion to [specificati
 ## 2. Process & Deployment Topology
 
 - **Runtime**: single Python 3 process per service, no containers, no supervisor besides systemd.
-- **`bus_display.service`** (deployed to `/etc/systemd/system/`): runs `app/main.py` as user `pi`, group `gpio`, with `SupplementaryGroups=gpio spi i2c` for hardware access. `Restart=on-failure`, `RestartSec=10` — this is the app's *only* self-healing mechanism (see [design.md](design.md) §Watchdog).
+- **`bus_display.service`** (deployed to `/etc/systemd/system/`): runs `app/main.py` as user `pi`, group `gpio`, with `SupplementaryGroups=gpio spi i2c` for hardware access. `Type=notify` + `WatchdogSec=900`: the loop pings `sd_notify('WATCHDOG=1')` every tick, and systemd kills and restarts the process if the pings stop (a real hang detector — the old in-process `Watchdog` class checked itself from the same thread and could never fire). `Restart=on-failure`, `RestartSec=10` (see [design.md](design.md) §7).
 - **`web_config.py`** has its own systemd unit, `systemd/web_config.service`, deployed the same way as `bus_display.service` (manual copy to `/etc/systemd/system/`, per `CLAUDE.md`). Its `/api/restart` endpoint needs a one-time sudoers entry (`systemd/bus_display_restart.sudoers.example`) to restart `bus_display` without a password.
 - **Dependencies**: Python packages via `pip` (`requirements.txt`); `pigpio`/`pigpiod` installed via `apt` (not pip-installable on Pi in a usable form) and must be running (`bus_display.service` has `Wants=pigpiod.service`, `After=pigpiod.service`).
 - **Fonts**: loaded at runtime from `pic/` (Atkinson Hyperlegible Next `.otf`, Material Design Icons `.ttf`) via absolute paths resolved from the script's own directory.
@@ -47,7 +47,7 @@ Technical breakdown of how the system is put together. Companion to [specificati
 |---|---|
 | `app/main.py` | Entry point / orchestration only: startup validation, hardware init, the boot screen, and the main scheduler/fetch/render loop. Imports everything else. |
 | `app/config.py` | All environment variable loading and layout constants (`SCREEN_WIDTH`/`SCREEN_HEIGHT`/`COLUMN_OFFSET` and everything derived from them), `validate_configuration()`, the `refresh_requested` event, `boot_timestamp`. Every other module imports from here — the single source of truth for configuration. `DYNAMIC_CONFIG_VARS` + `reload_dynamic_vars()` + `config_reload_requested` support Phase 4's narrow no-restart reload (currently just `FORCE_SCREEN` — see §5). |
-| `app/health.py` | `Watchdog` (stuck-loop detection) and `SystemHealth` (API-call/display-update counters, periodic stats logging), plus their module-level singleton instances. |
+| `app/health.py` | `sd_notify()` (systemd readiness/watchdog pings — hang detection is systemd's `WatchdogSec`, not an in-process timer) and `SystemHealth` (API-call/display-update counters, periodic stats logging, `write_status_file()` health snapshot for the web panel). |
 | `app/fetchers.py` | The shared `http_session` (retrying `requests.Session`), `DataCache`, `BackoffManager`, and every data-fetch function: `get_bus_arrival`, `get_train_disruptions`, `get_weather_from_homeassistant`, `get_bus_stop_coordinates`, `get_day_type_sensors`, the OneMap/Google journey-time calculators, and `fetch_data_parallel()`. |
 | `app/mqtt_client.py` | `MQTTClient` only — instantiated inside `main()`, not a module-level singleton (matches pre-split behavior). |
 | `app/scheduler.py` | Pure schedule logic for the four-screen model: `load_schedule_config()` (the only file-I/O boundary, reads `schedule_config.json`), `validate_schedule()`, `default_schedule_from_env()` (migration fallback from `WAKE_HOUR`/`SLEEP_HOUR`), `detect_overlaps()`, `get_next_wake_time()`, `resolve_active_screen()` (fixed precedence: `sleep_screen` > `bus_train_screen` > `daytime_screen` > `ha_screen`). |
@@ -83,7 +83,6 @@ Instantiated once at import time and shared across the whole process (each still
 | Singleton | Type | Module | Role |
 |---|---|---|---|
 | `http_session` | `requests.Session` | `fetchers.py` | Shared HTTP client with urllib3-level retry (3x, 500/502/503/504, backoff 0.5) |
-| `watchdog` | `Watchdog` | `health.py` | Detects a hung main loop (300s without a `feed()`) |
 | `backoff_manager` | `BackoffManager` | `fetchers.py` | Per-API-key exponential backoff gate before attempting a live fetch |
 | `system_health` | `SystemHealth` | `health.py` | Counters for API calls/errors, display updates, uptime; periodic log line every 10 loop iterations |
 | `cache` | `DataCache` | `fetchers.py` | In-memory TTL cache for bus/train/weather/journey-time responses (process-lifetime only, no persistence) |
@@ -121,7 +120,7 @@ Instantiated once at import time and shared across the whole process (each still
 ## 5. Data Flow — One Loop Iteration
 
 ```
-watchdog.feed()
+sd_notify('WATCHDOG=1')   (systemd hang detection — WatchdogSec in bus_display.service)
    │
    ▼
 check refresh_requested (MQTT) ──► if set: cache.clear(), manual_refresh=True, wake panel if asleep

@@ -1,8 +1,10 @@
 """MQTT client for Home Assistant integration: subscribes for manual-refresh
-commands and publishes display lifecycle status.
+and config_reload commands, and publishes display lifecycle status.
+
+Uses the paho-mqtt 2.x callback API (CallbackAPIVersion.VERSION2) —
+requirements.txt pins paho-mqtt>=2.0 to match.
 """
 import logging
-import threading
 import paho.mqtt.client as mqtt
 
 from config import (
@@ -23,32 +25,30 @@ class MQTTClient:
             logging.info("MQTT integration disabled")
             return
 
-        self.client = mqtt.Client()
+        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
         # Set callbacks
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
         self.client.on_disconnect = self.on_disconnect
 
-        # Set credentials if provided
-        if MQTT_USERNAME and MQTT_PASSWORD:
-            self.client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+        # Set credentials if provided (some brokers allow a username with an
+        # empty password, so only the username is required here)
+        if MQTT_USERNAME:
+            self.client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD or None)
 
-        # Connect in a separate thread to avoid blocking
-        threading.Thread(target=self._connect, daemon=True).start()
+        # connect_async + loop_start: paho's network thread owns the initial
+        # connection AND keeps retrying if the broker is down at boot — a
+        # plain connect() here would fail once and never self-heal, leaving
+        # MQTT dead for the life of the process after a reboot during a
+        # broker/HA outage.
+        logging.info(f"Connecting to MQTT broker at {MQTT_BROKER}:{MQTT_PORT}")
+        self.client.connect_async(MQTT_BROKER, MQTT_PORT, 60)
+        self.client.loop_start()
 
-    def _connect(self):
-        """Connect to MQTT broker."""
-        try:
-            logging.info(f"Connecting to MQTT broker at {MQTT_BROKER}:{MQTT_PORT}")
-            self.client.connect(MQTT_BROKER, MQTT_PORT, 60)
-            self.client.loop_start()
-        except Exception as e:
-            logging.error(f"Failed to connect to MQTT broker: {e}")
-
-    def on_connect(self, client, userdata, flags, rc):
+    def on_connect(self, client, userdata, flags, reason_code, properties):
         """Callback when connected to MQTT broker."""
-        if rc == 0:
+        if reason_code == 0:
             self.connected = True
             logging.info("Connected to MQTT broker")
             client.subscribe(MQTT_TOPIC_REFRESH)
@@ -57,7 +57,7 @@ class MQTTClient:
             logging.info(f"Subscribed to topic: {MQTT_TOPIC_CONFIG_RELOAD}")
             self.publish_status("online")
         else:
-            logging.error(f"Failed to connect to MQTT broker, return code: {rc}")
+            logging.error(f"Failed to connect to MQTT broker, reason: {reason_code}")
 
     def on_message(self, client, userdata, msg):
         """Callback when a message is received."""
@@ -74,10 +74,10 @@ class MQTTClient:
             logging.info("Config reload requested via MQTT")
             config_reload_requested.set()
 
-    def on_disconnect(self, client, userdata, rc):
+    def on_disconnect(self, client, userdata, flags, reason_code, properties):
         """Callback when disconnected from MQTT broker."""
         self.connected = False
-        if rc != 0:
+        if reason_code != 0:
             logging.warning(f"Unexpected MQTT disconnection. Will auto-reconnect.")
 
     def publish_status(self, status):

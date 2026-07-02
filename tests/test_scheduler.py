@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime
+from datetime import datetime, time
 
 import tests  # noqa: F401 (adds app/ to sys.path)
 from scheduler import (
@@ -27,7 +27,7 @@ def make_schedule(sleep=("21:00", "06:00"), ha=("20:00", "21:00"), bus=("06:30",
 
 class TestParseHHMM(unittest.TestCase):
     def test_valid(self):
-        self.assertEqual(parse_hhmm("06:30"), parse_hhmm("06:30"))
+        self.assertEqual(parse_hhmm("06:30"), time(6, 30))
 
     def test_invalid_raises(self):
         with self.assertRaises(ScheduleConfigError):
@@ -106,28 +106,28 @@ class TestResolveActiveScreen(unittest.TestCase):
 
     def test_mid_morning_school_day_shows_bus_train(self):
         now = datetime(2026, 1, 5, 7, 0)  # 07:00
-        screen, _ = resolve_active_screen(self.schedule, "school_day", now)
+        screen = resolve_active_screen(self.schedule, "school_day", now)
         self.assertEqual(screen, "bus_train_screen")
 
     def test_mid_morning_work_day_falls_back_to_daytime(self):
         now = datetime(2026, 1, 5, 7, 0)
-        screen, _ = resolve_active_screen(self.schedule, "work_day", now)
+        screen = resolve_active_screen(self.schedule, "work_day", now)
         self.assertEqual(screen, "daytime_screen")
 
     def test_mid_morning_off_day_falls_back_to_daytime(self):
         now = datetime(2026, 1, 5, 7, 0)
-        screen, _ = resolve_active_screen(self.schedule, "off_day", now)
+        screen = resolve_active_screen(self.schedule, "off_day", now)
         self.assertEqual(screen, "daytime_screen")
 
     def test_overnight_shows_sleep_screen_regardless_of_day_type(self):
         now = datetime(2026, 1, 5, 23, 0)
         for day_type in ("school_day", "work_day", "off_day"):
-            screen, _ = resolve_active_screen(self.schedule, day_type, now)
+            screen = resolve_active_screen(self.schedule, day_type, now)
             self.assertEqual(screen, "sleep_screen")
 
     def test_early_morning_wraparound_shows_sleep_screen(self):
         now = datetime(2026, 1, 5, 3, 0)  # 03:00, within 21:00-06:00 wrap
-        screen, _ = resolve_active_screen(self.schedule, "school_day", now)
+        screen = resolve_active_screen(self.schedule, "school_day", now)
         self.assertEqual(screen, "sleep_screen")
 
     def test_ha_screen_shows_in_a_gap_no_other_screen_covers(self):
@@ -135,36 +135,36 @@ class TestResolveActiveScreen(unittest.TestCase):
         # bus_train_screen, and daytime_screen all leave a genuine gap.
         schedule = make_schedule(sleep=("21:00", "06:00"), ha=("19:00", "20:00"), bus=("06:30", "08:30"), daytime=("06:00", "19:00"))
         now = datetime(2026, 1, 5, 19, 30)  # 19:30, only within ha_screen's 19:00-20:00
-        screen, _ = resolve_active_screen(schedule, "off_day", now)
+        screen = resolve_active_screen(schedule, "off_day", now)
         self.assertEqual(screen, "ha_screen")
 
     def test_sleep_screen_beats_ha_screen_on_overlap(self):
         schedule = make_schedule(sleep=("20:30", "06:00"), ha=("20:00", "21:00"))
         now = datetime(2026, 1, 5, 20, 45)  # inside both sleep_screen and ha_screen
-        screen, _ = resolve_active_screen(schedule, "school_day", now)
+        screen = resolve_active_screen(schedule, "school_day", now)
         self.assertEqual(screen, "sleep_screen")
 
     def test_gap_between_windows_falls_back_to_daytime(self):
         schedule = make_schedule(sleep=("23:00", "23:59"), ha=("21:00", "22:00"), bus=("06:30", "08:30"), daytime=("09:00", "21:00"))
         now = datetime(2026, 1, 5, 5, 0)  # gap: not in any window
-        screen, _ = resolve_active_screen(schedule, "off_day", now)
+        screen = resolve_active_screen(schedule, "off_day", now)
         self.assertEqual(screen, "daytime_screen")
 
     def test_bus_train_beats_daytime_on_overlap(self):
         now = datetime(2026, 1, 5, 7, 30)  # inside both bus_train (06:30-08:30) and daytime (06:00-22:00)
-        screen, _ = resolve_active_screen(self.schedule, "school_day", now)
+        screen = resolve_active_screen(self.schedule, "school_day", now)
         self.assertEqual(screen, "bus_train_screen")
 
     def test_bus_train_beats_ha_screen_on_overlap(self):
         schedule = make_schedule(sleep=("23:00", "23:59"), ha=("06:00", "07:00"), bus=("06:30", "08:30"), daytime=("09:00", "21:00"))
         now = datetime(2026, 1, 5, 6, 45)  # inside both ha_screen and bus_train_screen
-        screen, _ = resolve_active_screen(schedule, "school_day", now)
+        screen = resolve_active_screen(schedule, "school_day", now)
         self.assertEqual(screen, "bus_train_screen")
 
     def test_daytime_beats_ha_screen_on_overlap(self):
         schedule = make_schedule(sleep=("23:00", "23:59"), ha=("10:00", "11:00"), bus=("06:30", "08:30"), daytime=("09:00", "21:00"))
         now = datetime(2026, 1, 5, 10, 30)  # inside both ha_screen and daytime_screen
-        screen, _ = resolve_active_screen(schedule, "off_day", now)
+        screen = resolve_active_screen(schedule, "off_day", now)
         self.assertEqual(screen, "daytime_screen")
 
 

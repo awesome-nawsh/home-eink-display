@@ -90,11 +90,22 @@ class TestLoginFlow(unittest.TestCase):
             self.assertNotIn(b'Save Configuration', index_resp.data)
 
     def test_logout_clears_session(self):
+        # Logout is a POST with a CSRF token (a GET link could be triggered
+        # cross-site); login() clears the session, so re-render to get one.
         with web_config.app.test_client() as client:
             login(client)
-            client.get('/logout')
+            client.get('/')
+            with client.session_transaction() as sess:
+                token = sess['csrf_token']
+            client.post('/logout', data={'csrf_token': token})
             index_resp = client.get('/')
             self.assertNotIn(b'Save Configuration', index_resp.data)
+
+    def test_logout_get_is_rejected(self):
+        with web_config.app.test_client() as client:
+            login(client)
+            resp = client.get('/logout')
+            self.assertEqual(resp.status_code, 405)  # method not allowed — POST only
 
 
 class TestAuthBugRegression(unittest.TestCase):

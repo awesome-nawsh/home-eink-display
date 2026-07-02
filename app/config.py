@@ -133,7 +133,8 @@ TEXT_RIGHT_MARGIN = 15   # margin subtracted for right-aligned text (timestamp/d
 # Resilience / timing
 HTTP_TIMEOUT_DEFAULT = 10
 HTTP_TIMEOUT_LONG = 15
-WATCHDOG_TIMEOUT = 300
+# (Stuck-loop protection is systemd's WatchdogSec in bus_display.service,
+# pinged via health.sd_notify() — no in-process timeout constant needed.)
 
 # Environment variables with defaults
 API_KEY = decrypt_value(os.getenv('API_KEY'), _secrets_key)
@@ -219,6 +220,12 @@ def reload_dynamic_vars():
     FORCE_SCREEN = _resolve_force_screen(os.getenv('FORCE_SCREEN', ''))
     logging.info(f"Dynamic config reloaded: FORCE_SCREEN={FORCE_SCREEN}")
 
+# Where main.py drops its per-tick health/status JSON for web_config.py's
+# /api/status to read (separate processes — a small file is the shared
+# channel). Default under /tmp: rewritten every loop tick, so keeping it off
+# the SD card matters more than surviving a reboot.
+STATUS_FILE_PATH = os.getenv('STATUS_FILE_PATH', '/tmp/bus_display_status.json')
+
 # Boot-screen connectivity checklist
 BOOT_CHECK_TIMEOUT = float(os.getenv('BOOT_CHECK_TIMEOUT', '3'))
 INTERNET_CHECK_URL = os.getenv('INTERNET_CHECK_URL', 'https://www.google.com/generate_204')
@@ -232,12 +239,27 @@ HOME_ASSISTANT_WEATHER_ENTITY = os.getenv('HOME_ASSISTANT_WEATHER_ENTITY', 'weat
 # WAKE_HOUR/SLEEP_HOUR). HOME_ASSISTANT_SLEEP_URL is read as a fallback so
 # existing .env files deployed before this rename keep working.
 HOME_ASSISTANT_DASHBOARD_URL = os.getenv('HOME_ASSISTANT_DASHBOARD_URL') or os.getenv('HOME_ASSISTANT_SLEEP_URL')
-SLEEP_SCREEN_DASHBOARD = os.getenv('SLEEP_SCREEN_DASHBOARD')
-SLEEP_SCREEN_EINK_MODE = os.getenv('SLEEP_SCREEN_EINK_MODE', '2')
-SLEEP_SCREEN_ZOOM = os.getenv('SLEEP_SCREEN_ZOOM', '1')
-SLEEP_SCREEN_FORMAT = os.getenv('SLEEP_SCREEN_FORMAT')
-SLEEP_SCREEN_WAIT = os.getenv('SLEEP_SCREEN_WAIT', '5000')
-SLEEP_SCREEN_THEME = os.getenv('SLEEP_SCREEN_THEME', 'Graphite E-ink Light')
+
+
+def _env_with_legacy(new_name, legacy_name, default=None):
+    """Read `new_name` from the environment, falling back to `legacy_name`
+    (pre-rename .env files), then `default`. Empty string counts as unset."""
+    return os.getenv(new_name) or os.getenv(legacy_name) or default
+
+
+# ha_screen screenshot parameters (Puppeteer add-on query params). These
+# configure ha_screen — the HA dashboard screenshot — NOT the true overnight
+# sleep screen (render/sleep_screen.py, which takes no config at all).
+# Renamed from the legacy SLEEP_SCREEN_* prefix, which dated from when the
+# dashboard screenshot WAS the sleep screen; the old names are still read as
+# fallbacks so existing .env files keep working, and tools/migrate_env.py
+# copies them forward.
+HA_SCREEN_DASHBOARD = _env_with_legacy('HA_SCREEN_DASHBOARD', 'SLEEP_SCREEN_DASHBOARD')
+HA_SCREEN_EINK_MODE = _env_with_legacy('HA_SCREEN_EINK_MODE', 'SLEEP_SCREEN_EINK_MODE', '2')
+HA_SCREEN_ZOOM = _env_with_legacy('HA_SCREEN_ZOOM', 'SLEEP_SCREEN_ZOOM', '1')
+HA_SCREEN_FORMAT = _env_with_legacy('HA_SCREEN_FORMAT', 'SLEEP_SCREEN_FORMAT')
+HA_SCREEN_WAIT = _env_with_legacy('HA_SCREEN_WAIT', 'SLEEP_SCREEN_WAIT', '5000')
+HA_SCREEN_THEME = _env_with_legacy('HA_SCREEN_THEME', 'SLEEP_SCREEN_THEME', 'Graphite E-ink Light')
 
 # MQTT Configuration
 MQTT_ENABLED = os.getenv('MQTT_ENABLED', 'false').lower() == 'true'
@@ -252,6 +274,11 @@ MQTT_TOPIC_CONFIG_RELOAD = os.getenv('MQTT_TOPIC_CONFIG_RELOAD', 'eink/display/c
 # Cache duration
 CACHE_DURATION = int(os.getenv('CACHE_DURATION', '20'))
 WEATHER_CACHE_DURATION = int(os.getenv('WEATHER_CACHE_DURATION', '1800'))
+# How long the bus/train fetchers may keep serving last-known-good data past
+# its normal TTL while the LTA API is failing, before giving up and showing
+# an explicit "data unavailable" error on screen instead. A genuinely empty
+# API response (no buses running) is NOT an error and renders as blank.
+STALE_DATA_MAX_AGE = int(os.getenv('STALE_DATA_MAX_AGE', '600'))
 
 # Global flag for manual refresh
 refresh_requested = threading.Event()
@@ -278,8 +305,6 @@ def validate_configuration():
         errors.append("API_TRAIN_URL is not configured")
     if not API_BUS_STOP_INFO_URL:
         warnings.append("API_BUS_STOP_INFO_URL not set - using default")
-
-    # ... rest of validation
 
     # Journey time configuration
     if SHOW_JOURNEY_TIME:

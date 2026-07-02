@@ -4,7 +4,6 @@ per-endpoint backoff manager they're all built on.
 """
 import json
 import logging
-from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
@@ -49,6 +48,41 @@ class DataCache:
                 return data
         return None
 
+    def get_stale(self, key, max_age=None):
+        """Ignores the normal TTL: returns (data, age_seconds) even for an
+        expired entry, or None if the key is absent or older than `max_age`
+        seconds — in which case the entry is also evicted, since data that
+        old is no longer worth serving. Used by the fetchers' failure paths
+        to serve last-known-good data during an API outage. max_age=None
+        means any age is acceptable (weather ages gracefully; bus arrival
+        times don't — they get STALE_DATA_MAX_AGE)."""
+        if key not in self.cache:
+            return None
+        data, timestamp = self.cache[key]
+        age = (datetime.now() - timestamp).total_seconds()
+        if max_age is not None and age > max_age:
+            del self.cache[key]
+            logging.warning(
+                f"Evicted '{key}' from cache — {int(age)}s old, beyond the {max_age}s stale-serving limit"
+            )
+            return None
+        return data, age
+
+    def prune(self, max_age, prefix=None):
+        """Evict entries older than `max_age` seconds (optionally only keys
+        starting with `prefix`). Journey-time keys embed the departure time,
+        so a new key appears every few minutes and would otherwise
+        accumulate for the life of the process."""
+        cutoff = datetime.now() - timedelta(seconds=max_age)
+        expired = [
+            key for key, (_, timestamp) in self.cache.items()
+            if timestamp < cutoff and (prefix is None or key.startswith(prefix))
+        ]
+        for key in expired:
+            del self.cache[key]
+        if expired:
+            logging.debug(f"Pruned {len(expired)} expired cache entries")
+
     def set(self, key, data):
         self.cache[key] = (data, datetime.now())
 
@@ -58,6 +92,27 @@ class DataCache:
         logging.debug("Cache cleared")
 
 cache = DataCache()
+
+
+def _stale_or_unavailable(cache_key, label):
+    """Shared failure path for the bus/train fetchers: serve last-known-good
+    data (even past its normal TTL) for up to STALE_DATA_MAX_AGE while the
+    API is failing, then give up — evict the entry and return None so the
+    renderer shows an explicit error instead of badly outdated data.
+
+    None deliberately means "the API is failing", which is distinct from a
+    successful-but-empty response (no buses running is real data, rendered
+    as an empty section, not an error)."""
+    stale = cache.get_stale(cache_key, max_age=STALE_DATA_MAX_AGE)
+    if stale is not None:
+        data, age = stale
+        logging.warning(f"Serving stale {label} data ({int(age)}s old) while the API is failing")
+        return data
+    logging.error(
+        f"No usable {label} data: API failing and nothing cached within {STALE_DATA_MAX_AGE}s "
+        f"— the display will show an error for this section"
+    )
+    return None
 
 
 class BackoffManager:
@@ -105,10 +160,7 @@ def get_bus_arrival(bus_stop_code, force_refresh=False):
     cache_key = f"bus_{bus_stop_code}"
 
     if not force_refresh and not backoff_manager.should_retry(cache_key):
-        cached_data = cache.get(cache_key)
-        if cached_data is not None:
-            return cached_data
-        return []
+        return _stale_or_unavailable(cache_key, 'bus')
 
     if not force_refresh:
         cached_data = cache.get(cache_key)
@@ -158,13 +210,20 @@ def get_bus_arrival(bus_stop_code, force_refresh=False):
         logging.error(f"Error fetching bus data for {bus_stop_code}: {e}")
         backoff_manager.record_failure(cache_key)
         system_health.record_api_call('bus', success=False)
+        return _stale_or_unavailable(cache_key, 'bus')
 
-        cached_data = cache.get(cache_key)
-        return cached_data if cached_data is not None else []
+# Success-only memo (not lru_cache): coordinates never change for a given
+# stop code, so a successful lookup is cached for the life of the process —
+# but a failed lookup (transient network blip) must NOT be memoized, or
+# journey times would stay dead until a service restart.
+_bus_stop_coordinates_memo = {}
 
-@lru_cache(maxsize=10)
+
 def get_bus_stop_coordinates(bus_stop_code):
     """Get coordinates for a bus stop code from LTA DataMall."""
+    if bus_stop_code in _bus_stop_coordinates_memo:
+        return _bus_stop_coordinates_memo[bus_stop_code]
+
     # Use the configurable URL
     url = API_BUS_STOP_INFO_URL + bus_stop_code
 
@@ -184,6 +243,7 @@ def get_bus_stop_coordinates(bus_stop_code):
             lat = stop['Latitude']
             lon = stop['Longitude']
             logging.info(f"Bus stop {bus_stop_code} coordinates: {lat}, {lon}")
+            _bus_stop_coordinates_memo[bus_stop_code] = (lat, lon)
             return lat, lon
 
         logging.warning(f"Bus stop {bus_stop_code} not found in LTA database")
@@ -357,6 +417,16 @@ def calculate_journey_times_with_api(bus_info, services_to_track):
     if not SHOW_JOURNEY_TIME or not JOURNEY_DESTINATION:
         return {}
 
+    # bus_info is None when the bus API is failing (see _stale_or_unavailable)
+    # and [] when there's genuinely nothing arriving — no journeys either way.
+    if not bus_info:
+        return {}
+
+    # Journey cache keys embed the departure time, so old ones are
+    # write-once garbage — prune them here rather than letting the dict
+    # grow for the life of the process.
+    cache.prune(JOURNEY_TIME_CACHE_DURATION, prefix='journey_')
+
     # Get origin coordinates
     origin_coords = get_bus_stop_coordinates(BUS_STOP_CODE_A)
     if not origin_coords:
@@ -420,10 +490,7 @@ def get_train_disruptions(force_refresh=False):
     cache_key = "train_disruptions"
 
     if not force_refresh and not backoff_manager.should_retry(cache_key):
-        cached_data = cache.get(cache_key)
-        if cached_data is not None:
-            return cached_data
-        return "No Disruptions Today!"
+        return _stale_or_unavailable(cache_key, 'train')
 
     if not force_refresh:
         cached_data = cache.get(cache_key)
@@ -474,9 +541,7 @@ def get_train_disruptions(force_refresh=False):
         logging.error(f"Error fetching train disruptions: {e}")
         backoff_manager.record_failure(cache_key)
         system_health.record_api_call('train', success=False)
-
-        cached_data = cache.get(cache_key)
-        return cached_data if cached_data is not None else "No Disruptions Today!"
+        return _stale_or_unavailable(cache_key, 'train')
 
 def get_weather_from_homeassistant(force_refresh=False):
     """Fetch weather data from Home Assistant with caching and backoff."""
@@ -486,18 +551,18 @@ def get_weather_from_homeassistant(force_refresh=False):
 
     cache_key = "weather_data"
 
+    # Weather's failure paths use get_stale() with no max_age — unlike bus
+    # arrival times, a weather reading ages gracefully, so last-known-good
+    # is served indefinitely during an HA outage rather than erroring out.
     if not force_refresh and not backoff_manager.should_retry(cache_key):
-        if cache_key in cache.cache:
-            data, _ = cache.cache[cache_key]
-            return data
-        return None
+        stale = cache.get_stale(cache_key)
+        return stale[0] if stale else None
 
     if not force_refresh:
-        if cache_key in cache.cache:
-            data, timestamp = cache.cache[cache_key]
-            if datetime.now() - timestamp < timedelta(seconds=WEATHER_CACHE_DURATION):
-                logging.debug(f"Using cached weather data (age: {(datetime.now() - timestamp).seconds}s)")
-                return data
+        cached_data = cache.get(cache_key, duration=WEATHER_CACHE_DURATION)
+        if cached_data is not None:
+            logging.debug("Using cached weather data")
+            return cached_data
 
     logging.debug("Fetching weather from Home Assistant...")
 
@@ -531,9 +596,10 @@ def get_weather_from_homeassistant(force_refresh=False):
         backoff_manager.record_failure(cache_key)
         system_health.record_api_call('weather', success=False)
 
-        if cache_key in cache.cache:
-            data, timestamp = cache.cache[cache_key]
-            logging.warning(f"Using stale weather cache (age: {(datetime.now() - timestamp).seconds}s)")
+        stale = cache.get_stale(cache_key)
+        if stale:
+            data, age = stale
+            logging.warning(f"Using stale weather cache (age: {int(age)}s)")
             return data
         return None
 
@@ -572,16 +638,21 @@ def get_day_type_sensors():
         system_health.record_api_call('day_type', success=False)
         return None, None
 
+# One long-lived pool rather than a fresh ThreadPoolExecutor per tick —
+# spawning and joining three threads every 30 seconds is needless churn on
+# the Pi Zero W's single core.
+_fetch_executor = ThreadPoolExecutor(max_workers=3)
+
+
 def fetch_data_parallel(force_refresh=False):
     """Fetch bus, train, weather data in parallel, then calculate journey times."""
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        future_bus = executor.submit(get_bus_arrival, BUS_STOP_CODE_A, force_refresh)
-        future_train = executor.submit(get_train_disruptions, force_refresh)
-        future_weather = executor.submit(get_weather_from_homeassistant, force_refresh)
+    future_bus = _fetch_executor.submit(get_bus_arrival, BUS_STOP_CODE_A, force_refresh)
+    future_train = _fetch_executor.submit(get_train_disruptions, force_refresh)
+    future_weather = _fetch_executor.submit(get_weather_from_homeassistant, force_refresh)
 
-        bus_info = future_bus.result()
-        train_info = future_train.result()
-        weather_info = future_weather.result()
+    bus_info = future_bus.result()
+    train_info = future_train.result()
+    weather_info = future_weather.result()
 
     # Calculate journey times using API (done after bus data is fetched)
     journey_times = {}

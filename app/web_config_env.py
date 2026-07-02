@@ -7,6 +7,11 @@ import tempfile
 
 from dotenv import dotenv_values
 
+# Secret-key values treated the same as "unset": web_config.py refuses to
+# start with one, and tools/migrate_env.py generates a replacement. Defined
+# here (the module both import anyway) so the two can't drift apart.
+KNOWN_BAD_SECRET_KEYS = {'', 'BusAuntieSK', 'change_this_to_a_random_string'}
+
 
 def read_env_file(path):
     """Returns a dict of the current .env contents (empty dict if the file

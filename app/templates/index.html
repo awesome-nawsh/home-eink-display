@@ -3,11 +3,11 @@
 {% block content %}
 <div class="status-bar">
     <div class="status-item">
-        <div class="status-label">Configuration</div>
-        <div class="status-value" style="color: #10b981;">✓ Loaded</div>
+        <div class="status-label">Display Service</div>
+        <div class="status-value" id="display-status">Checking…</div>
     </div>
     <div class="status-item">
-        <div class="status-label">Last Updated</div>
+        <div class="status-label">Config Last Updated</div>
         <div class="status-value">{{ last_updated }}</div>
     </div>
     <div class="status-item">
@@ -21,7 +21,7 @@
 
 <p class="helper-text" style="margin: 10px 0 20px;">
     Fields marked <span class="badge badge-dynamic">applies live</span> take effect within moments of saving, no restart needed.
-    Everything else needs "Restart Service" above (or the config file's next-loop mtime check) to apply.
+    Everything else needs "Restart Service" above to apply.
 </p>
 
 <form method="POST" action="{{ url_for('save_config') }}">

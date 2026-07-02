@@ -26,7 +26,7 @@ home-eink-display/
 │   ├── main.py                 # Entry point / orchestration only — the scheduler loop
 │   ├── config.py               # All env vars, layout constants, validate_configuration(),
 │   │                           # dynamic-reload support (config.py's own docstring explains this)
-│   ├── health.py                # Watchdog, SystemHealth
+│   ├── health.py                # sd_notify (systemd watchdog pings), SystemHealth
 │   ├── fetchers.py               # All data-fetch functions, DataCache, BackoffManager, http_session
 │   ├── mqtt_client.py             # MQTTClient
 │   ├── scheduler.py                # Four-screen scheduling: schedule_config.json load/validate/resolve

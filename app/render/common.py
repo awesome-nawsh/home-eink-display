@@ -24,7 +24,7 @@ def get_font_bold(size):
     """Get bold variant of Atkinson Hyperlegible font."""
     try:
         return ImageFont.truetype(os.path.join(picdir, 'AtkinsonHyperlegibleNext-Bold.otf'), size)
-    except:
+    except OSError:
         logging.warning("Atkinson bold font not found, using regular")
         return get_font(size)
 
@@ -33,7 +33,7 @@ def get_icon_font(size):
     """Get Material Design Icons font for rendering icons."""
     try:
         return ImageFont.truetype(os.path.join(picdir, 'materialdesignicons-webfont.ttf'), size)
-    except:
+    except OSError:
         logging.warning("MDI font not found, using regular font as fallback")
         return get_font(size)
 
@@ -78,7 +78,7 @@ class MDI:
     MAP_MARKER_DISTANCE = "\U000F08F0"
     TIMER = "\U000F13B3"
     NAVIGATION = "\U000F0423"
-    # Load/Capacity icons (NEW)
+    # Load/Capacity icons (see BUS_LOAD_MAP_ICON below)
     SEAT_PASSENGER = "\U000F0E2F"           # mdi-seat-passenger (F0E2F)
     HUMAN_MALE = "\U000F0649"               # mdi-human-male (F0649)
     MINUS_CIRCLE_OUTLINE = "\U000F0376"     # mdi-minus-circle-outline (F0376)
