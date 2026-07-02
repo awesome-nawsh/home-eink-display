@@ -39,6 +39,24 @@ function loadDisplayStatus() {
 
 document.addEventListener('DOMContentLoaded', loadDisplayStatus);
 
+// Live font-sample preview: any select with a "<name>-sample" image below it
+// (rendered by the font_sample flag in CONFIG_SCHEMA) re-fetches the
+// server-rendered sample when the selection changes.
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.font-sample-img').forEach(img => {
+        const select = document.getElementById(img.id.replace(/-sample$/, ''));
+        if (!select) return;
+        select.addEventListener('change', () => {
+            if (select.value) {
+                img.src = '/api/font_sample/' + encodeURIComponent(select.value);
+                img.parentElement.style.display = '';
+            } else {
+                img.parentElement.style.display = 'none';
+            }
+        });
+    });
+});
+
 function triggerRefresh() {
     fetch('/api/refresh', {
         method: 'POST',

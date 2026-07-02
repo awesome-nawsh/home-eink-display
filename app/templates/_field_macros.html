@@ -62,5 +62,12 @@
     {% elif field_config.get('placeholder') and field_config.type != 'password' %}
         <div class="helper-text">Example: {{ field_config.placeholder }}</div>
     {% endif %}
+
+    {% if field_config.get('font_sample') %}
+        <div class="font-sample">
+            <img id="{{ field_name }}-sample" class="font-sample-img" alt="Font sample"
+                 src="{{ url_for('api_font_sample', font_name=config.get(field_name) or field_config.get('default')) }}">
+        </div>
+    {% endif %}
 </div>
 {% endmacro %}

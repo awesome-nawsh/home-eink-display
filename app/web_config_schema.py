@@ -35,6 +35,7 @@ CONFIG_SCHEMA = {
                         'Bitter', 'Literata', 'Lexend', 'Fira Sans'],
             'required': False, 'default': 'Atkinson Regular',
             'note': 'Requires a service restart to apply.',
+            'font_sample': True,  # renders a live /api/font_sample preview below the select
         },
     },
     'Weather': {

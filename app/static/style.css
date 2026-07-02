@@ -140,6 +140,20 @@ details.card[open] > summary h2::after {
     transform: rotate(90deg);
 }
 
+/* Server-rendered font sample under the DISPLAY_FONT select */
+.font-sample {
+    margin-top: 10px;
+    padding: 8px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fafafa;
+    display: inline-block;
+}
+.font-sample-img {
+    display: block;
+    max-width: 100%;
+}
+
 .form-group {
     margin-bottom: 20px;
 }
