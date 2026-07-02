@@ -11,7 +11,7 @@ its 'bucket' between ticks to decide when a redraw is due.
 import logging
 
 from config import SCREEN_WIDTH, FONT_CLOCK, FONT_HEADER, FONT_SECTION
-from render.common import get_font, get_font_bold, get_weather_icon, draw_mdi_icon
+from render.common import get_font, get_font_bold, get_weather_icon, draw_mdi_icon, MDI
 
 _HOUR_WORDS = ['twelve', 'one', 'two', 'three', 'four', 'five', 'six',
                'seven', 'eight', 'nine', 'ten', 'eleven']
@@ -89,16 +89,35 @@ def display_daytime_screen(display_mgr, model):
         raw = weather.get('condition') or ''
         condition = {'partlycloudy': 'partly cloudy',
                      'lightning-rainy': 'thundery'}.get(raw, raw).replace('-', ' ').title()
-        parts = [condition]
+
+        # Detail row: condition, then icon-labelled humidity and air quality
+        # (matching bus_train's weather section), composed as (icon, text)
+        # segments and centered as one group.
+        segments = [(None, condition)]
         if weather.get('humidity') is not None:
-            parts.append(f"{weather['humidity']}%")
+            segments.append((MDI.WATER_PERCENT, f"{weather['humidity']}%"))
         if weather.get('aqi') is not None:
             reading = f"{weather.get('aqi_label', 'AQI')} {weather['aqi']}"
             if weather.get('aqi_category'):
                 reading += f" ({weather['aqi_category']})"
-            parts.append(reading)
-        draw.text((center_x, row_y + 55), "  ·  ".join(parts),
-                  font=get_font(FONT_SECTION), fill=0, anchor="mm")
+            segments.append((MDI.LEAF, reading))
+
+        detail_font = get_font(FONT_SECTION)
+        detail_icon_size = 22
+        icon_text_gap = 5
+        segment_gap = 24
+        widths = [(detail_icon_size + icon_text_gap if icon else 0) +
+                  draw.textlength(text, font=detail_font)
+                  for icon, text in segments]
+        x = center_x - (sum(widths) + segment_gap * (len(segments) - 1)) / 2
+        detail_y = row_y + 55
+        for (icon, text), width in zip(segments, widths):
+            if icon:
+                draw_mdi_icon(draw, x + detail_icon_size / 2, detail_y, icon,
+                              size=detail_icon_size, color=0, anchor="mm")
+                x += detail_icon_size + icon_text_gap
+            draw.text((x, detail_y), text, font=detail_font, fill=0, anchor="lm")
+            x += draw.textlength(text, font=detail_font) + segment_gap
 
     display_mgr.display()
     logging.info(f"daytime_screen displayed ({model['time_words']}, "
