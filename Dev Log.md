@@ -2,11 +2,11 @@
 
 Complete history of all major versions and features added during development.
 
-**Current Version:** v12.0  
+**Current Version:** v14.0  
 **Status:** In use  ✅  
-**Last Updated:** October 2, 2025 
+**Last Updated:** July 2, 2026 
 
-**Latest Feature:** Atkinson Hyperlegible Typography 🔤
+**Latest Feature:** Dynamic (no-restart) config reload for the schedule and `FORCE_SCREEN` 🔄
 
 ---
 
@@ -22,6 +22,8 @@ Complete history of all major versions and features added during development.
 8. **v10.0** - Production-ready 🚀
 9. **v11.0** - Polish & refinement ✨
 10. **v12.0** - Typography excellence 🔤
+11. **v13.0** - API-based journey time calculation 🧭
+12. **v14.0** - Module split, 4-screen scheduler, web config rewrite, dynamic reload 🧩
 
 ---
 
@@ -269,7 +271,7 @@ sudo apt install python3-psutil  # Optional but recommended
 
 ---
 
-## Version 12.0 - Typography Overhaul (CURRENT)
+## Version 12.0 - Typography Overhaul
 **Major Changes:**
 - ✅ Replaced all fonts with Atkinson Hyperlegible Next
 - ✅ Bold bus numbers for better visibility
@@ -322,6 +324,78 @@ sudo apt install python3-psutil  # Optional but recommended
 # Can remove (optional):
 - OpenSans-Bold.ttf
 ```
+
+---
+
+## Version 13.0 - API-Based Journey Time Calculation
+**Major Changes:**
+- ✅ Real journey-time estimates to a destination, not just bus arrival times
+- ✅ Two routing provider options: OneMap (free, Singapore-based) or Google Maps Directions
+- ✅ Total journey time = wait time + transit time + arrival estimate
+- ✅ Journey info rendered under each bus box in red text
+
+### Configuration Added
+```env
+SHOW_JOURNEY_TIME=true
+BUS_SERVICES_TO_TRACK="970,156,77"
+JOURNEY_DESTINATION="Your Destination"
+JOURNEY_DESTINATION_SHORT="Short Name"
+ROUTING_API_PROVIDER="onemap"        # or "google"
+GOOGLE_MAPS_API_KEY=...
+ONEMAP_API_KEY=...
+JOURNEY_TIME_CACHE_DURATION=1800
+```
+
+### New Functions
+- `get_bus_stop_coordinates()` — fetch lat/lon from LTA DataMall
+- `calculate_journey_time_onemap()` / `calculate_journey_time_google()` — per-provider routing
+- `calculate_journey_times_with_api()` — orchestrates the above
+- `fetch_data_parallel()` now returns a 4th value (journey_times), up from 3
+
+### System Health & Monitoring
+- `SystemHealth` tracks routing API calls/errors as their own category, alongside bus/train/weather
+- Routing results cached far longer than bus data (30 min vs 20s) since they change rarely
+
+### Why This Mattered
+Knowing "the 970 arrives in 4 minutes" isn't the same as knowing "you'll actually get to school by 7:52" — v13 closes that gap by chaining bus-arrival + routing-API data into one estimate.
+
+---
+
+## Version 14.0 - Rewrite: Module Split, 4-Screen Scheduler, Web Config Rewrite, Dynamic Reload (CURRENT)
+
+A four-phase rewrite, each phase merged and verified on real hardware before the next began. Full technical detail lives in `ChangeLog.md`'s `[V14]` entry and `design.md` §13-15 — this section is the narrative summary.
+
+### Phase 1 — Module split (pure refactor)
+- `app/main.py` (~1600 lines, monolithic) split into `config.py`, `health.py`, `fetchers.py`, `mqtt_client.py`, `render/` (one file per screen + shared `common.py`), with `main.py` reduced to orchestration only.
+- Zero behavior change — every function/class kept its name, signature, and logic, just relocated. Verified via `py_compile`, an AST cross-module reference check, and side-by-side hardware comparison.
+
+### Phase 2 — Four-screen scheduler, day-type gating, boot checklist
+- Replaced the single `WAKE_HOUR`/`SLEEP_HOUR` pair with `app/scheduler.py`, driving **four** independently-scheduled screens via a new `schedule_config.json`:
+  - `sleep_screen` (new — true overnight screen, local PIL draw only, no network) — highest precedence, "ultimate override"
+  - `bus_train_screen` (today's existing view) — only eligible on a `school_day`
+  - `daytime_screen` (new — placeholder for now)
+  - `ha_screen` (renamed from the old "sleep screen" — HA dashboard screenshot) — **lowest** precedence, only shows in an unclaimed gap
+- `app/day_type.py` resolves `school_day`/`work_day`/`off_day` once per calendar day from two Home Assistant `binary_sensor` entities, with a fallback if HA is unreachable.
+- `app/boot_checks.py` + `render/boot_screen.py` — real boot-time connectivity checklist (network, internet, LTA API, Home Assistant), replacing a static "System Starting..." message.
+- `FORCE_SCREEN` env var added for testing — forces any one screen regardless of schedule/day-type.
+- First `tests/` directory added (stdlib `unittest`, no new dependency) covering all the new pure logic.
+
+### Phase 3 — `web_config.py` rewrite: real auth, scheduler UI, secrets at rest
+- **Fixed a real auth-bypass bug**: the old "login" just set an unsigned `logged_in=true` cookie any client could forge. Replaced with a real signed Flask `session`; a forged/tampered cookie now fails signature verification. No more insecure fallback secret/password — the app refuses to start without real values.
+- Added hand-rolled CSRF protection (no new dependency) on every state-changing route.
+- New `/schedule` + `/save_schedule` pages — edit all four screens' time windows from a browser, with conflict warnings shown in the UI (previously only logged).
+- New `/api/restart` — actually restarts the `bus_display` service (the old "refresh" button only ever triggered an MQTT data refresh, despite implying a restart).
+- **Secrets encryption at rest**: API keys/tokens/passwords saved via the web UI are now encrypted (`enc:` prefix, Fernet/`cryptography`) rather than stored as plaintext in `.env`; decrypted transparently when the app reads them. Protects a leaked/shared/committed `.env` file in isolation — not a fully compromised device, since the key lives on the same disk.
+- Rewrote the single-file inline-HTML `web_config.py` into small modules + real Jinja templates + its own systemd unit.
+- Added `tools/migrate_env.py` (migrates an older `.env` to this format) and `How-to.md` (from-scratch setup guide).
+
+### Phase 4 — Dynamic (no-restart) config reload
+- Deliberately narrow scope: only the **schedule** and **`FORCE_SCREEN`** apply live, without a restart — not "everything," since making every config variable dynamic would require rewriting how nearly every module reads config, for features nobody's asked to change without a restart.
+- Editing `schedule_config.json` directly (e.g. over SSH) or `FORCE_SCREEN` in `.env` is picked up within moments via a file-mtime-poll backstop; saving either through the web UI triggers an immediate MQTT-based reload instead of waiting on the poll.
+- Everything else in `.env` still needs a restart — which itself became a one-click action back in Phase 3.
+
+### Why a 4-phase rewrite instead of one big change
+This is a live production display a family relies on for school mornings — each phase was merged and run on real hardware (including full overnight sleep→wake cycles and a live HA/MQTT outage that confirmed the fallback design worked as intended) before starting the next, to minimize time spent in a broken or unverified state.
 
 ---
 
