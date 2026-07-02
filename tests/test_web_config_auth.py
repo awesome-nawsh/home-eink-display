@@ -21,13 +21,16 @@ import web_config  # noqa: E402
 
 PROTECTED_HTML_ROUTES = [
     ('GET', '/schedule'),
+    ('GET', '/preview'),
 ]
 # GET routes hit login_required directly -> 401. POST routes are ALSO
 # CSRF-protected, and the CSRF check (before_request) runs before
 # login_required, so a request with no established session/token at all
 # is rejected at the CSRF layer (400) before auth is even checked — still
 # correctly denied, just via a different status code.
-PROTECTED_API_GET_ROUTES = [('GET', '/api/status'), ('GET', '/api/font_sample/Inter')]
+PROTECTED_API_GET_ROUTES = [
+    ('GET', '/api/status'), ('GET', '/api/font_sample/Inter'), ('GET', '/api/preview_image'),
+]
 PROTECTED_API_POST_ROUTES = [('POST', '/api/refresh'), ('POST', '/api/restart')]
 
 
@@ -170,6 +173,52 @@ class TestApiStatusWebConfigUptime(unittest.TestCase):
             self.assertIn('uptime_seconds', web_config_status)
             self.assertIn('uptime_formatted', web_config_status)
             self.assertGreaterEqual(web_config_status['uptime_seconds'], 0)
+
+
+class TestScreenPreview(unittest.TestCase):
+    """The Preview tab: /preview (the picker page) and /api/preview_image
+    (the actual render), which reuses tools/preview_render.py's
+    SCREEN_RENDERERS — the same code path the CLI tool uses."""
+
+    def test_preview_page_lists_all_screens(self):
+        import html as html_module
+        with web_config.app.test_client() as client:
+            login(client)
+            resp = client.get('/preview')
+            self.assertEqual(resp.status_code, 200)
+            page = html_module.unescape(resp.data.decode())
+            for label in web_config.PREVIEW_SCREEN_LABELS.values():
+                self.assertIn(label, page)
+
+    def test_every_offered_screen_renders_a_png(self):
+        with web_config.app.test_client() as client:
+            login(client)
+            for screen in web_config.PREVIEW_SCREEN_LABELS:
+                resp = client.get(f'/api/preview_image?screen={screen}')
+                self.assertEqual(resp.status_code, 200, screen)
+                self.assertEqual(resp.mimetype, 'image/png', screen)
+                self.assertTrue(resp.data.startswith(b'\x89PNG'), screen)
+
+    def test_unknown_screen_404s(self):
+        with web_config.app.test_client() as client:
+            login(client)
+            resp = client.get('/api/preview_image?screen=ha_screen')
+            self.assertEqual(resp.status_code, 404)
+            self.assertFalse(resp.get_json()['success'])
+
+    def test_default_screen_is_combined(self):
+        with web_config.app.test_client() as client:
+            login(client)
+            no_param = client.get('/api/preview_image').data
+            explicit = client.get('/api/preview_image?screen=combined').data
+            self.assertEqual(no_param, explicit)
+
+    def test_toggles_change_the_rendered_image(self):
+        with web_config.app.test_client() as client:
+            login(client)
+            plain = client.get('/api/preview_image?screen=combined').data
+            disrupted = client.get('/api/preview_image?screen=combined&disruption=1').data
+            self.assertNotEqual(plain, disrupted)
 
 
 class TestFontSample(unittest.TestCase):

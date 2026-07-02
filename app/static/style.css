@@ -154,6 +154,18 @@ details.card[open] > summary h2::after {
     max-width: 100%;
 }
 
+/* Screen Preview tab — matches the panel's 800x480 aspect ratio, scaled
+   down to fit the card on smaller viewports. */
+.preview-image {
+    display: block;
+    width: 100%;
+    max-width: 800px;
+    height: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: white;
+}
+
 /* Visually dims a disabled screen's Start/End time inputs on the Schedule
    page — deliberately NOT the disabled attribute, which would stop the
    browser submitting the field and wipe the stored time on save. */

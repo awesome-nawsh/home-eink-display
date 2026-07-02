@@ -1,5 +1,11 @@
 # Changelog - Bus Arrival Display
 
+## [V15.2] - Screen Preview tab in the web panel
+
+- New **Preview** tab (`/preview`) renders any of `combined`/`daytime`/`sleep`/`boot`/`debug` to a PNG directly in the browser — the same hardware-free code path as `tools/preview_render.py` (real `render.*` draw functions against a fake in-memory display, no e-ink hardware or SSH access needed). Scenario toggles mirror the CLI tool's flags: simulate a train disruption, weather unavailable, omit journey time, simulate a manual refresh — greyed out for screens that don't use them. Not offered for `ha_screen`, which fetches a live HA dashboard screenshot rather than drawing anything locally.
+- `tools/preview_render.py`'s screen→renderer mapping is now a module-level `SCREEN_RENDERERS` dict, shared by the CLI and the new `/api/preview_image` route — one source of truth for which screens are previewable and how, rather than two copies drifting apart.
+- New tests: `TestScreenPreview` in `test_web_config_auth.py` (143 total).
+
 ## [V15.1] - Web panel status bar shows its own uptime
 
 - The status bar's "Web Panel" cell now shows how long `web_config.py` itself has been running, alongside the existing "Display Service" cell for `bus_display`. `/api/status` gained a `web_config` key (`uptime_seconds`/`uptime_formatted`) computed from a module-level start timestamp recorded at import — no shared file needed, since the process serving the request *is* the thing being reported on. New test: 138 total.

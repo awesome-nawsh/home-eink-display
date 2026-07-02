@@ -67,6 +67,49 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+// Screen Preview tab: re-fetches /api/preview_image whenever the screen
+// choice or a scenario toggle changes. Only 'combined' (bus_train_screen)
+// uses all four toggles; 'daytime' only honors weather; 'sleep'/'boot'/
+// 'debug' ignore all of them (mirrors tools/preview_render.py's toggles).
+const TOGGLE_RELEVANCE = {
+    combined: ['disruption', 'no-weather', 'no-journey', 'manual-refresh'],
+    daytime: ['no-weather'],
+    sleep: [], boot: [], debug: [],
+};
+
+function updatePreviewImage() {
+    const screenEl = document.getElementById('preview-screen');
+    const img = document.getElementById('preview-image');
+    if (!screenEl || !img) return;
+
+    const screen = screenEl.value;
+    const relevant = TOGGLE_RELEVANCE[screen] || [];
+    const params = new URLSearchParams({ screen });
+    ['disruption', 'no-weather', 'no-journey', 'manual-refresh'].forEach(name => {
+        const el = document.getElementById('preview-' + name);
+        if (el) {
+            el.disabled = !relevant.includes(name);
+            if (el.checked && relevant.includes(name)) params.set(name.replace(/-/g, '_'), '1');
+        }
+    });
+    img.src = '/api/preview_image?' + params.toString();
+
+    const note = document.getElementById('preview-toggle-note');
+    if (note) {
+        note.textContent = relevant.length
+            ? ''
+            : 'This screen doesn’t use the toggles above — it always renders the same fixed sample.';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const screenEl = document.getElementById('preview-screen');
+    if (!screenEl) return;
+    ['preview-screen', 'preview-disruption', 'preview-no-weather', 'preview-no-journey', 'preview-manual-refresh']
+        .forEach(id => document.getElementById(id)?.addEventListener('change', updatePreviewImage));
+    updatePreviewImage();
+});
+
 function triggerRefresh() {
     fetch('/api/refresh', {
         method: 'POST',
