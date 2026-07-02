@@ -88,6 +88,7 @@ def build_scenario(args):
         'temperature': 29,
         'condition': 'partlycloudy',
         'humidity': 68,
+        'psi': 57,
     }
 
     journey_times = {}

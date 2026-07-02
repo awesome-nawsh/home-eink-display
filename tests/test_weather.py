@@ -45,20 +45,24 @@ class TestWmoMapping(unittest.TestCase):
 class TestGetWeatherSourceOrdering(unittest.TestCase):
     def setUp(self):
         # Fresh cache/backoff singletons so tests don't see each other's
-        # (or a real run's) state.
+        # (or a real run's) state; PSI fetch stubbed out so no test ever
+        # touches the network.
         fetchers.cache = fetchers.DataCache()
         fetchers.backoff_manager = fetchers.BackoffManager()
+        psi_patcher = patch.object(fetchers, '_fetch_psi', return_value=57)
+        psi_patcher.start()
+        self.addCleanup(psi_patcher.stop)
 
     def test_ha_success_wins_and_skips_openmeteo(self):
-        with patch.object(fetchers, '_fetch_weather_ha', return_value=HA_WEATHER), \
+        with patch.object(fetchers, '_fetch_weather_ha', return_value=dict(HA_WEATHER)), \
              patch.object(fetchers, '_fetch_weather_openmeteo') as om:
-            self.assertEqual(get_weather(force_refresh=True), HA_WEATHER)
+            self.assertEqual(get_weather(force_refresh=True), dict(HA_WEATHER, psi=57))
             om.assert_not_called()
 
     def test_ha_none_falls_back_to_openmeteo(self):
         with patch.object(fetchers, '_fetch_weather_ha', return_value=None), \
-             patch.object(fetchers, '_fetch_weather_openmeteo', return_value=OM_WEATHER):
-            self.assertEqual(get_weather(force_refresh=True), OM_WEATHER)
+             patch.object(fetchers, '_fetch_weather_openmeteo', return_value=dict(OM_WEATHER)):
+            self.assertEqual(get_weather(force_refresh=True), dict(OM_WEATHER, psi=57))
 
     def test_both_fail_returns_none_when_no_cache(self):
         with patch.object(fetchers, '_fetch_weather_ha', return_value=None), \
@@ -89,9 +93,9 @@ class TestGetWeatherSourceOrdering(unittest.TestCase):
         with patch.object(fetchers, '_fetch_weather_ha', return_value=None), \
              patch.object(fetchers, '_fetch_weather_openmeteo', return_value=None):
             get_weather(force_refresh=True)
-        with patch.object(fetchers, '_fetch_weather_ha', return_value=HA_WEATHER), \
+        with patch.object(fetchers, '_fetch_weather_ha', return_value=dict(HA_WEATHER)), \
              patch.object(fetchers, '_fetch_weather_openmeteo'):
-            self.assertEqual(get_weather(force_refresh=True), HA_WEATHER)
+            self.assertEqual(get_weather(force_refresh=True), dict(HA_WEATHER, psi=57))
         self.assertTrue(fetchers.backoff_manager.should_retry('weather_data'))
 
 

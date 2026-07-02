@@ -16,7 +16,7 @@ A Raspberry Pi Zero W drives a Waveshare 7.5" black/white/red e-ink display moun
 | Bus load indicator | Per-arrival crowding level (Seats/Standing/Limited) shown as an icon + fill bar | derived from LTA `Load` field |
 | MRT/train disruptions | Current disruption alerts (line, direction, affected stations, free-text advisory) or an "all clear" state | `TRAIN_API_URL` |
 | Journey time estimate | Optional: for specific tracked bus services, computes total time-to-destination (wait + transit) via a routing API | `SHOW_JOURNEY_TIME`, `BUS_SERVICES_TO_TRACK`, `JOURNEY_DESTINATION`, `ROUTING_API_PROVIDER` |
-| Weather | Current conditions from a Home Assistant weather entity, falling back to Open-Meteo (free, no API key) when HA is unconfigured or unreachable — location from `WEATHER_LAT`/`WEATHER_LON`, else the bus stop's own coordinates | `HOME_ASSISTANT_WEATHER_ENTITY`, `WEATHER_LAT`, `WEATHER_LON` |
+| Weather | Current conditions from a Home Assistant weather entity, falling back to Open-Meteo (free, no API key) when HA is unconfigured or unreachable — location from `WEATHER_LAT`/`WEATHER_LON`, else the bus stop's own coordinates. Includes the NEA 24-hour PSI (worst of the five regional readings) shown next to humidity | `HOME_ASSISTANT_WEATHER_ENTITY`, `WEATHER_LAT`, `WEATHER_LON` |
 | `sleep_screen` | The true overnight screen — minimal, locally-drawn (`MDI.WEATHER_NIGHT` icon + "Next wake: HH:MM"), no network fetch. Per its own schedule window (default ~21:00–06:00). **Highest precedence of all four screens — the "ultimate override,"** always wins on a schedule overlap, never gated by day-type. While active, bus/train/weather polling is suspended entirely | schedule entry in `schedule_config.json` |
 | `ha_screen` dashboard | Per its own schedule window (default a one-hour evening slot), screenshots a full Home Assistant Lovelace dashboard (via a Puppeteer HA add-on) and displays it directly. **Lowest precedence of the four screens** — only shows in a genuine gap none of the other three claim. While active, bus/train/weather polling is suspended entirely (only re-fetches on entry or manual refresh) | `HOME_ASSISTANT_DASHBOARD_URL`, `HA_SCREEN_*` (legacy `SLEEP_SCREEN_*` names still read as fallbacks) |
 | `daytime_screen` | Shown when `sleep_screen` isn't active and `bus_train_screen` isn't eligible/scheduled; beats `ha_screen` on overlap and is the safe fallback when no window matches at all. A word clock ("Quarter past two") + date + current weather, redrawn only on quarter-hour boundaries or a weather change (see §3.1) | schedule entry in `schedule_config.json` |
@@ -94,7 +94,6 @@ Full list of environment variables — see `.env.example` as the source of truth
 From `README.md`'s roadmap, still open:
 - Multiple bus stops with tabs + button to switch
 - Physical refresh/reboot button + LED
-- Air quality data next to weather
 - Calendar events from HA (today's events) on the `bus_train_screen`
 - Single bus stop only — `BUS_STOP_CODE_A` is the only stop supported; no multi-stop UI exists yet despite the "_A" suffix implying future stops B/C.
 - No partial e-ink refresh — every update is a full redraw, which is slower and causes the visible full-screen flash typical of e-ink.

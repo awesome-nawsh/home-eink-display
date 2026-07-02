@@ -636,6 +636,22 @@ def _fetch_weather_openmeteo():
         return None
 
 
+def _fetch_psi():
+    """Raw NEA 24-hour PSI fetch (data.gov.sg, free, no API key). Returns the
+    WORST of the five regional readings — the conservative number for "should
+    we play outside" — or None. No caching (get_weather() owns that, since the
+    PSI rides along inside the weather dict)."""
+    try:
+        response = http_session.get('https://api.data.gov.sg/v1/environment/psi',
+                                    timeout=HTTP_TIMEOUT_DEFAULT)
+        response.raise_for_status()
+        readings = response.json()['items'][0]['readings']['psi_twenty_four_hourly']
+        return max(readings.values()) if readings else None
+    except (requests.RequestException, KeyError, IndexError, ValueError) as e:
+        logging.warning(f"Error fetching PSI from NEA: {e}")
+        return None
+
+
 def get_weather(force_refresh=False):
     """Weather with caching, backoff, and a two-source chain: Home Assistant
     first (skipped when unconfigured), then Open-Meteo. A backoff failure is
@@ -665,6 +681,10 @@ def get_weather(force_refresh=False):
         source = 'Open-Meteo'
 
     if weather is not None:
+        # Air quality rides along in the weather dict (cached and refreshed
+        # together) — a PSI fetch failure just means no PSI shown, never a
+        # weather failure.
+        weather['psi'] = _fetch_psi()
         cache.set(cache_key, weather)
         backoff_manager.reset(cache_key)
         system_health.record_api_call('weather', success=True)

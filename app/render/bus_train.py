@@ -174,6 +174,13 @@ def draw_weather_section_right(draw, draw_r, weather_info, x_start):
         draw_mdi_icon(draw_r, x_start, weather_y + 65, MDI.WATER_PERCENT, size=18, color=0)
         draw_r.text((x_start + 23, weather_y + 65), f"{humidity}%", font=get_font(BOTTOM_FONT_SIZE), fill=0)
 
+    # Air quality (NEA 24h PSI, worst region) on the same row, if available
+    psi = weather_info.get('psi')
+    if psi is not None:
+        psi_x = x_start + (90 if humidity else 0)
+        draw_mdi_icon(draw, psi_x, weather_y + 65, MDI.LEAF, size=18, color=0)
+        draw.text((psi_x + 23, weather_y + 65), f"PSI {psi}", font=get_font(BOTTOM_FONT_SIZE), fill=0)
+
 def draw_train_section(draw, draw_r, train_info, train_x):
     """Draw the train disruption section and return final y position."""
     train_font = get_font(FONT_SECTION)

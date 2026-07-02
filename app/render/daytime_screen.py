@@ -41,7 +41,8 @@ def build_daytime_model(now, weather_info):
     if weather_info:
         weather_summary = (weather_info.get('temperature'),
                            weather_info.get('condition'),
-                           weather_info.get('humidity'))
+                           weather_info.get('humidity'),
+                           weather_info.get('psi'))
     return {
         'bucket': (now.date().isoformat(), now.hour, quarter, weather_summary),
         'time_words': time_in_words(now.hour, quarter),
@@ -87,9 +88,12 @@ def display_daytime_screen(display_mgr, model):
         raw = weather.get('condition') or ''
         condition = {'partlycloudy': 'partly cloudy',
                      'lightning-rainy': 'thundery'}.get(raw, raw).replace('-', ' ').title()
-        humidity = weather.get('humidity')
-        detail = condition if humidity is None else f"{condition}  ·  {humidity}%"
-        draw.text((center_x, row_y + 55), detail,
+        parts = [condition]
+        if weather.get('humidity') is not None:
+            parts.append(f"{weather['humidity']}%")
+        if weather.get('psi') is not None:
+            parts.append(f"PSI {weather['psi']}")
+        draw.text((center_x, row_y + 55), "  ·  ".join(parts),
                   font=get_font(FONT_SECTION), fill=0, anchor="mm")
 
     display_mgr.display()
