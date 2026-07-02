@@ -193,9 +193,21 @@ def composite_preview(mgr):
     return preview
 
 
+# Single source of truth for "which screens can be previewed and how" —
+# shared by this CLI and web_config.py's /preview tab, so the two never
+# drift into rendering different screens or defaults.
+SCREEN_RENDERERS = {
+    'combined': render_combined,
+    'debug': render_debug,
+    'daytime': render_daytime,
+    'sleep': render_sleep,
+    'boot': render_boot,
+}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--screen', choices=['combined', 'debug', 'daytime', 'sleep', 'boot'], default='combined',
+    parser.add_argument('--screen', choices=list(SCREEN_RENDERERS), default='combined',
                          help='Which screen to render (default: combined)')
     parser.add_argument('--disruption', action='store_true', help='Simulate a train disruption instead of "all clear"')
     parser.add_argument('--no-weather', action='store_true', help='Simulate weather being unavailable')
@@ -205,14 +217,7 @@ def main():
                          help='Output PNG path (default: tools/preview_output.png, gitignored)')
     args = parser.parse_args()
 
-    dispatch = {
-        'combined': render_combined,
-        'debug': render_debug,
-        'daytime': render_daytime,
-        'sleep': render_sleep,
-        'boot': render_boot,
-    }
-    mgr = dispatch[args.screen](args)
+    mgr = SCREEN_RENDERERS[args.screen](args)
 
     preview = composite_preview(mgr)
     preview.save(args.out)

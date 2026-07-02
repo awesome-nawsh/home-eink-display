@@ -16,6 +16,7 @@
             <div class="nav">
                 <a href="{{ url_for('index') }}">Settings</a>
                 <a href="{{ url_for('schedule_page') }}">Schedule</a>
+                <a href="{{ url_for('preview_page') }}">Preview</a>
                 {# Logout is a POST (with CSRF token) so a cross-site link/img can't trigger it #}
                 <form method="POST" action="{{ url_for('logout') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

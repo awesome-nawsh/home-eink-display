@@ -41,6 +41,22 @@ APP_DIR = os.path.dirname(os.path.realpath(__file__))
 ENV_FILE = os.path.join(APP_DIR, '.env')
 load_dotenv(ENV_FILE)
 
+# tools/preview_render.py has no hardware imports (same as app/render/*.py
+# and app/config.py — see its own docstring) so it's safe to import directly
+# into this process for the Preview tab's /api/preview_image route.
+TOOLS_DIR = os.path.join(os.path.dirname(APP_DIR), 'tools')
+
+# Friendly labels for the Preview tab's screen picker. combined/daytime/sleep
+# reuse scheduler.SCREEN_DISPLAY_NAMES so the wording matches the Schedule
+# page; boot/debug aren't scheduled screens, so they get their own labels.
+PREVIEW_SCREEN_LABELS = {
+    'combined': SCREEN_DISPLAY_NAMES['bus_train_screen'],
+    'daytime': SCREEN_DISPLAY_NAMES['daytime_screen'],
+    'sleep': SCREEN_DISPLAY_NAMES['sleep_screen'],
+    'boot': 'Boot Checklist',
+    'debug': 'Debug Dump',
+}
+
 # Process start time, for the status bar's "Web Panel" uptime — recorded at
 # import rather than inside a request handler, so it reflects when this
 # process actually started (a Flask reload/worker respawn resets it, which
@@ -347,6 +363,50 @@ def api_font_sample(font_name):
     img.save(buf, 'PNG')
     buf.seek(0)
     return send_file(buf, mimetype='image/png', max_age=3600)
+
+
+@app.route('/preview')
+@login_required
+def preview_page():
+    """The Preview tab: pick a screen + a few scenario toggles, see the
+    render below (via /api/preview_image). ha_screen isn't offered — it
+    fetches a live HA dashboard screenshot, not something to fake here."""
+    return render_template('preview.html', screen_labels=PREVIEW_SCREEN_LABELS)
+
+
+@app.route('/api/preview_image')
+@login_required
+def api_preview_image():
+    """Renders one of the local (non-HA) screens to a PNG, using the exact
+    same code path as `tools/preview_render.py` — the real render.* draw
+    functions against a fake in-memory display, no e-ink hardware touched.
+    Lets the Preview tab show what a screen looks like without SSHing in
+    to run the CLI tool or waiting for its scheduled window on the Pi."""
+    from io import BytesIO
+    from types import SimpleNamespace
+    sys.path.insert(0, TOOLS_DIR)
+    import preview_render
+
+    screen = request.args.get('screen', 'combined')
+    if screen not in preview_render.SCREEN_RENDERERS:
+        return jsonify({'success': False, 'error': 'Unknown screen'}), 404
+
+    def flag(name):
+        return request.args.get(name) == '1'
+
+    args = SimpleNamespace(
+        disruption=flag('disruption'),
+        no_weather=flag('no_weather'),
+        no_journey=flag('no_journey'),
+        manual_refresh=flag('manual_refresh'),
+    )
+    mgr = preview_render.SCREEN_RENDERERS[screen](args)
+    img = preview_render.composite_preview(mgr)
+
+    buf = BytesIO()
+    img.save(buf, 'PNG')
+    buf.seek(0)
+    return send_file(buf, mimetype='image/png')
 
 
 @app.route('/api/restart', methods=['POST'])

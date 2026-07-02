@@ -131,6 +131,11 @@ See `design.md` for the design rationale behind each phase.
 - [x] Show the web_config panel's own uptime in the status bar, alongside the display
       service's — done in v15.1 (`WEB_CONFIG_START_TIME` recorded at import, exposed via
       `/api/status`'s new `web_config` key, rendered as a "Web Panel" status-bar cell).
+- [x] Screen preview in the web UI — done: new `/preview` tab renders any of
+      `combined`/`daytime`/`sleep`/`boot`/`debug` to a PNG in the browser (scenario toggles for
+      disruption/weather/journey-time/manual-refresh), by importing `tools/preview_render.py`'s
+      `SCREEN_RENDERERS` directly rather than duplicating the render logic — the CLI tool and the
+      web tab now share one source of truth for "how to fake each screen's data".
 
 ## Phase 4 — Dynamic (no-restart) config reload for the schedule and `FORCE_SCREEN`
 

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+    <h2>Screen Preview</h2>
+    <p class="helper-text" style="margin-bottom: 20px;">
+        Renders the real display drawing code against fake sample data — the same code path as
+        <code>tools/preview_render.py</code> — so you can see what a screen looks like without
+        waiting for its scheduled window or SSHing into the Pi. Not available for the Home Assistant
+        Dashboard screen, which fetches a live screenshot rather than drawing anything locally.
+    </p>
+
+    <div class="screen-row">
+        <div class="form-group">
+            <label for="preview-screen">Screen</label>
+            <select id="preview-screen">
+                {% for value, label in screen_labels.items() %}
+                    <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <div class="checkbox-wrapper">
+                <input type="checkbox" id="preview-disruption">
+                <label for="preview-disruption" style="margin: 0;">Simulate train disruption</label>
+            </div>
+        </div>
+        <div class="form-group">
+            <div class="checkbox-wrapper">
+                <input type="checkbox" id="preview-no-weather">
+                <label for="preview-no-weather" style="margin: 0;">Weather unavailable</label>
+            </div>
+        </div>
+        <div class="form-group">
+            <div class="checkbox-wrapper">
+                <input type="checkbox" id="preview-no-journey">
+                <label for="preview-no-journey" style="margin: 0;">Omit journey time</label>
+            </div>
+        </div>
+        <div class="form-group">
+            <div class="checkbox-wrapper">
+                <input type="checkbox" id="preview-manual-refresh">
+                <label for="preview-manual-refresh" style="margin: 0;">Simulate manual refresh</label>
+            </div>
+        </div>
+    </div>
+    <p class="helper-text" id="preview-toggle-note" style="margin-bottom: 15px;"></p>
+
+    <img id="preview-image" class="preview-image" alt="Screen preview">
+</div>
+{% endblock %}
