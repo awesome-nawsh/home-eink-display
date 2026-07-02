@@ -210,16 +210,30 @@ DYNAMIC_ENV_FIELDS = {'FORCE_SCREEN'}
 @app.route('/save', methods=['POST'])
 @login_required
 def save_config():
+    secrets_key = get_or_create_key(SECRETS_KEY_PATH)
+
     def encrypt_fn(value):
-        return encrypt_value(value, get_or_create_key(SECRETS_KEY_PATH))
+        return encrypt_value(value, secrets_key)
 
     to_set, to_unset = build_env_updates(request.form, CONFIG_SCHEMA, encrypt_fn)
+
+    # build_env_updates() returns EVERY schema field on every save (checkboxes
+    # always resolve to true/false, blanks always land in to_unset) — so diff
+    # against the current .env to find what the user actually changed, or the
+    # dynamic-vs-restart messaging below is meaningless. Password fields are
+    # the exception: a non-blank submission always counts as changed (Fernet
+    # ciphertexts differ every encryption, and typing one is intentional).
+    current = read_env_file(ENV_FILE)
+    changed_fields = {k for k, v in to_set.items() if current.get(k) != v}
+    changed_fields |= {k for k in to_unset if k in current}
+
     try:
         atomic_write_env_file(ENV_FILE, to_set, to_unset)
-        changed_fields = set(to_set) | set(to_unset)
         if changed_fields & DYNAMIC_ENV_FIELDS:
             publish_config_reload()
-        if changed_fields <= DYNAMIC_ENV_FIELDS and changed_fields:
+        if not changed_fields:
+            flash('No changes to save.', 'info')
+        elif changed_fields <= DYNAMIC_ENV_FIELDS:
             flash('Configuration saved — applies automatically within moments (no restart needed).', 'success')
         else:
             flash('Configuration saved. Restart the service to apply changes.', 'success')

@@ -8,7 +8,14 @@ After=pigpiod.service
 # After=multi-user.target
 
 [Service]
-Type=simple
+# Type=notify + WatchdogSec: main.py pings sd_notify('WATCHDOG=1') every loop
+# tick; if the pings stop (hung loop, stuck network call), systemd kills and
+# restarts the process. WatchdogSec must comfortably exceed the longest
+# legitimate gap between ticks — SLEEP_INTERVAL (default 300s) plus a full
+# e-ink refresh — hence 900s.
+Type=notify
+NotifyAccess=main
+WatchdogSec=900
 User=pi
 Group=gpio
 ExecStart=/usr/bin/python3 /home/pi/home-eink-display/app/main.py
@@ -16,6 +23,7 @@ WorkingDirectory=/home/pi/home-eink-display/app
 StandardOutput=inherit
 StandardError=inherit
 Environment="PYTHONUNBUFFERED=1"
+# on-failure covers watchdog kills too (SIGABRT counts as unclean exit)
 Restart=on-failure
 RestartSec=10
 

@@ -15,7 +15,7 @@ from datetime import datetime
 
 import config
 from config import *
-from health import watchdog, system_health
+from health import system_health, sd_notify
 from fetchers import cache, fetch_data_parallel, http_session, get_day_type_sensors
 from mqtt_client import MQTTClient
 from render.common import DisplayManager, get_font
@@ -123,12 +123,15 @@ def main():
         logged_schedule_warnings = set()
         stats_counter = 0
 
-        while True:
-            watchdog.feed()
+        # Tell systemd startup succeeded (Type=notify) — a no-op outside systemd.
+        sd_notify('READY=1')
 
-            if not watchdog.check():
-                logging.critical("Watchdog detected stuck loop - restarting...")
-                return 1
+        while True:
+            # Watchdog ping: if these stop for WatchdogSec (bus_display.service),
+            # systemd kills and restarts the process. This replaces the old
+            # in-process Watchdog, which fed and checked itself from this same
+            # thread and so could never actually detect a hang.
+            sd_notify('WATCHDOG=1')
 
             manual_refresh = False
 
@@ -222,10 +225,14 @@ def main():
                         logging.debug("ha_screen displayed successfully")
                         epd.sleep()
                         is_epd_asleep = True
+                        active_screen = "ha_screen"
                     else:
+                        # Leave active_screen unset so screen_changed stays
+                        # True next tick and the fetch genuinely retries —
+                        # setting it here would suppress the redraw path and
+                        # make this log message a lie.
                         logging.warning("Could not display ha_screen, will retry")
-
-                active_screen = "ha_screen"
+                        active_screen = None
                 # ha_screen deliberately skips fetch_data_parallel() entirely
                 # while active — no LTA/weather polling until the schedule
                 # exits this window or a manual refresh forces a redraw.

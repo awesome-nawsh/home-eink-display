@@ -133,7 +133,8 @@ TEXT_RIGHT_MARGIN = 15   # margin subtracted for right-aligned text (timestamp/d
 # Resilience / timing
 HTTP_TIMEOUT_DEFAULT = 10
 HTTP_TIMEOUT_LONG = 15
-WATCHDOG_TIMEOUT = 300
+# (Stuck-loop protection is systemd's WatchdogSec in bus_display.service,
+# pinged via health.sd_notify() — no in-process timeout constant needed.)
 
 # Environment variables with defaults
 API_KEY = decrypt_value(os.getenv('API_KEY'), _secrets_key)
@@ -252,6 +253,11 @@ MQTT_TOPIC_CONFIG_RELOAD = os.getenv('MQTT_TOPIC_CONFIG_RELOAD', 'eink/display/c
 # Cache duration
 CACHE_DURATION = int(os.getenv('CACHE_DURATION', '20'))
 WEATHER_CACHE_DURATION = int(os.getenv('WEATHER_CACHE_DURATION', '1800'))
+# How long the bus/train fetchers may keep serving last-known-good data past
+# its normal TTL while the LTA API is failing, before giving up and showing
+# an explicit "data unavailable" error on screen instead. A genuinely empty
+# API response (no buses running) is NOT an error and renders as blank.
+STALE_DATA_MAX_AGE = int(os.getenv('STALE_DATA_MAX_AGE', '600'))
 
 # Global flag for manual refresh
 refresh_requested = threading.Event()
