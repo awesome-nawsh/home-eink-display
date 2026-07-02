@@ -3,6 +3,9 @@ from datetime import datetime, time
 
 import tests  # noqa: F401 (adds app/ to sys.path)
 from scheduler import (
+    SCREEN_NAMES,
+    SCREEN_DISPLAY_NAMES,
+    DISABLEABLE_SCREENS,
     validate_schedule,
     default_schedule_from_env,
     detect_overlaps,
@@ -93,6 +96,14 @@ class TestDetectOverlaps(unittest.TestCase):
         schedule = make_schedule(sleep=("23:00", "23:59"), ha=("21:00", "22:00"), bus=("06:30", "08:30"), daytime=("09:00", "21:00"))
         self.assertEqual(detect_overlaps(schedule), [])
 
+    def test_disabled_screen_is_excluded(self):
+        # Same overlapping ha/daytime windows as test_ha_inside_daytime_is_reported,
+        # but ha_screen is switched off — it can't override or be overridden.
+        schedule = make_schedule(ha=("21:00", "22:00"), daytime=("06:00", "22:00"))
+        schedule["screens"]["ha_screen"]["enabled"] = False
+        warnings = detect_overlaps(schedule)
+        self.assertFalse(any("ha_screen" in w for w in warnings))
+
 
 class TestGetNextWakeTime(unittest.TestCase):
     def test_returns_sleep_screen_end(self):
@@ -138,6 +149,17 @@ class TestResolveActiveScreen(unittest.TestCase):
         screen = resolve_active_screen(schedule, "off_day", now)
         self.assertEqual(screen, "ha_screen")
 
+    def test_disabled_ha_screen_falls_back_to_daytime_in_its_own_gap(self):
+        # Same gap as the test above, but ha_screen is switched off — the
+        # gap it would have claimed now falls through to daytime_screen
+        # (resolve_active_screen's final fallback), same as if ha_screen
+        # had no window covering that time at all.
+        schedule = make_schedule(sleep=("21:00", "06:00"), ha=("19:00", "20:00"), bus=("06:30", "08:30"), daytime=("06:00", "19:00"))
+        schedule["screens"]["ha_screen"]["enabled"] = False
+        now = datetime(2026, 1, 5, 19, 30)
+        screen = resolve_active_screen(schedule, "off_day", now)
+        self.assertEqual(screen, "daytime_screen")
+
     def test_sleep_screen_beats_ha_screen_on_overlap(self):
         schedule = make_schedule(sleep=("20:30", "06:00"), ha=("20:00", "21:00"))
         now = datetime(2026, 1, 5, 20, 45)  # inside both sleep_screen and ha_screen
@@ -166,6 +188,22 @@ class TestResolveActiveScreen(unittest.TestCase):
         now = datetime(2026, 1, 5, 10, 30)  # inside both ha_screen and daytime_screen
         screen = resolve_active_screen(schedule, "off_day", now)
         self.assertEqual(screen, "daytime_screen")
+
+
+class TestScreenDisplayNames(unittest.TestCase):
+    def test_every_screen_has_a_display_name(self):
+        self.assertEqual(set(SCREEN_DISPLAY_NAMES.keys()), set(SCREEN_NAMES))
+
+    def test_disableable_screens_are_a_subset_of_screen_names(self):
+        self.assertTrue(set(DISABLEABLE_SCREENS).issubset(set(SCREEN_NAMES)))
+
+    def test_the_three_load_bearing_screens_are_not_disableable(self):
+        # sleep_screen (always-on override), bus_train_screen (primary
+        # content), and daytime_screen (resolve_active_screen's final
+        # fallback) must always be schedulable — see DISABLEABLE_SCREENS'
+        # docstring in scheduler.py.
+        for name in ("sleep_screen", "bus_train_screen", "daytime_screen"):
+            self.assertNotIn(name, DISABLEABLE_SCREENS)
 
 
 if __name__ == "__main__":

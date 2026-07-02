@@ -6,19 +6,22 @@ import json
 import os
 import tempfile
 
-from scheduler import SCREEN_NAMES
+from scheduler import SCREEN_NAMES, DISABLEABLE_SCREENS
 
 
 def schedule_from_form(form):
     """Builds a candidate schedule dict from submitted form fields named
-    '<screen>_start'/'<screen>_end' for each of scheduler.SCREEN_NAMES."""
-    return {
-        "version": 1,
-        "screens": {
-            name: {"start": form.get(f"{name}_start", ""), "end": form.get(f"{name}_end", "")}
-            for name in SCREEN_NAMES
-        },
-    }
+    '<screen>_start'/'<screen>_end' for each of scheduler.SCREEN_NAMES, plus
+    '<screen>_enabled' (a checkbox, so its absence means unchecked) for
+    screens in scheduler.DISABLEABLE_SCREENS. Screens outside that set never
+    get an 'enabled' key — scheduler.py treats a missing key as always-on."""
+    screens = {}
+    for name in SCREEN_NAMES:
+        window = {"start": form.get(f"{name}_start", ""), "end": form.get(f"{name}_end", "")}
+        if name in DISABLEABLE_SCREENS:
+            window["enabled"] = form.get(f"{name}_enabled") == "true"
+        screens[name] = window
+    return {"version": 1, "screens": screens}
 
 
 def atomic_write_json(path, data):

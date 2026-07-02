@@ -26,7 +26,10 @@ from werkzeug.security import check_password_hash
 import paho.mqtt.publish as mqtt_publish
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-from scheduler import load_schedule_config, validate_schedule, detect_overlaps
+from scheduler import (
+    load_schedule_config, validate_schedule, detect_overlaps,
+    SCREEN_DISPLAY_NAMES, DISABLEABLE_SCREENS,
+)
 from secrets_vault import get_or_create_key, encrypt_value, decrypt_value
 from web_config_schema import CONFIG_SCHEMA, COLLAPSED_CATEGORIES
 from web_config_env import read_env_file, build_env_updates, atomic_write_env_file, KNOWN_BAD_SECRET_KEYS
@@ -266,7 +269,10 @@ def save_config():
 def schedule_page():
     schedule = load_schedule_config(SCHEDULE_CONFIG_PATH, WAKE_HOUR, SLEEP_HOUR)
     warnings = detect_overlaps(schedule)
-    return render_template('schedule.html', schedule=schedule, warnings=warnings)
+    return render_template(
+        'schedule.html', schedule=schedule, warnings=warnings,
+        screen_display_names=SCREEN_DISPLAY_NAMES, disableable_screens=DISABLEABLE_SCREENS,
+    )
 
 
 @app.route('/save_schedule', methods=['POST'])

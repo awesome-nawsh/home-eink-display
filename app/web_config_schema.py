@@ -11,7 +11,7 @@ required, default (optional), options (for select), min/max (for number),
 placeholder (optional), note (optional — extra helper text distinct from
 placeholder, e.g. deprecation/legacy-fallback explanations).
 """
-from scheduler import SCREEN_NAMES
+from scheduler import SCREEN_NAMES, SCREEN_DISPLAY_NAMES
 
 # Categories rendered collapsed by default on the Settings page (still just
 # a click to open). Everything else renders expanded.
@@ -82,8 +82,13 @@ CONFIG_SCHEMA = {
         'FORCE_SCREEN': {
             # No blank entry here — the select macro renders its own
             # "-- Select --" empty option as the "normal operation" choice.
+            # option_labels shows scheduler.SCREEN_DISPLAY_NAMES in the
+            # dropdown while the submitted/stored value stays the raw
+            # screen_name — config.py compares FORCE_SCREEN against
+            # scheduler.SCREEN_NAMES exactly, so the value can never change.
             'type': 'select', 'label': 'Force Screen (testing only — leave blank for normal operation)',
-            'options': list(SCREEN_NAMES), 'required': False, 'dynamic': True,
+            'options': list(SCREEN_NAMES), 'option_labels': SCREEN_DISPLAY_NAMES,
+            'required': False, 'dynamic': True,
         },
     },
     'MQTT Settings': {
