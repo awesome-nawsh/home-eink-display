@@ -88,6 +88,7 @@ FONT_XLARGE = 32
 FONT_TIMESTAMP = 18  # timestamp, journey-time line, boot "Booted:" text
 FONT_SECTION = 20    # weather header (bold) / train body font size
 FONT_HEADER = 28     # bold section title font size: bus/train headers, DEBUG MODE
+FONT_CLOCK = 64      # daytime_screen word clock ("Quarter past eleven" must fit 800px)
 
 # Header layout (shared by the boot screen, main view, and debug screen)
 HEADER_ICON_X = 15

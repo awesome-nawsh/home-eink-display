@@ -16,14 +16,14 @@ from datetime import datetime
 import config
 from config import *
 from health import system_health, sd_notify
-from fetchers import cache, fetch_data_parallel, http_session, get_day_type_sensors
+from fetchers import cache, fetch_data_parallel, http_session, get_day_type_sensors, get_weather
 from mqtt_client import MQTTClient
 from render.common import DisplayManager, get_font
 from render.bus_train import display_combined_view
 from render.debug_screen import display_debug_screen
 from render.ha_screen import display_ha_screen
 from render.sleep_screen import display_sleep_screen
-from render.daytime_screen import display_daytime_screen
+from render.daytime_screen import display_daytime_screen, build_daytime_model
 from render.boot_screen import display_boot_checklist
 from scheduler import load_schedule_config, resolve_active_screen, get_next_wake_time, detect_overlaps
 from day_type import day_type_cache, resolve_todays_day_type
@@ -151,6 +151,7 @@ def main():
         active_screen = None
         stats_counter = 0
         day_type = None  # stays None under FORCE_SCREEN/debug; set by normal resolution
+        last_daytime_bucket = None  # daytime_screen's quarter-hour redraw tracker
 
         # Tell systemd startup succeeded (Type=notify) — a no-op outside systemd.
         sd_notify('READY=1')
@@ -276,9 +277,14 @@ def main():
                                                    manual_refresh, stats_counter)
                 active_screen = "bus_train_screen"
 
-            else:  # daytime_screen — static placeholder, only redraw on entry/manual refresh
-                if screen_changed or manual_refresh:
-                    display_daytime_screen(display_mgr)
+            else:  # daytime_screen — word clock; redraw only when the quarter-hour
+                   # bucket (or the weather shown) changes: 4 flashes/hour, not 120.
+                weather_info = get_weather(manual_refresh)  # cache-served most ticks
+                model = build_daytime_model(datetime.now(), weather_info)
+
+                if screen_changed or manual_refresh or model['bucket'] != last_daytime_bucket:
+                    display_daytime_screen(display_mgr, model)
+                    last_daytime_bucket = model['bucket']
                     if mqtt_client:
                         mqtt_client.publish_status("idle")
 
