@@ -8,13 +8,19 @@ from web_config_schedule_forms import schedule_from_form, atomic_write_json
 from scheduler import SCREEN_NAMES, validate_schedule, detect_overlaps
 
 
-def make_form():
-    return {
+def make_form(ha_enabled=True):
+    form = {
         'sleep_screen_start': '21:00', 'sleep_screen_end': '06:00',
         'bus_train_screen_start': '06:30', 'bus_train_screen_end': '08:30',
         'daytime_screen_start': '06:00', 'daytime_screen_end': '22:00',
         'ha_screen_start': '20:00', 'ha_screen_end': '21:00',
     }
+    if ha_enabled:
+        # A checked HTML checkbox submits value="true"; an unchecked one is
+        # simply absent from the form — schedule_from_form() reads that
+        # absence as disabled, matching real browser behavior.
+        form['ha_screen_enabled'] = 'true'
+    return form
 
 
 class TestScheduleFromForm(unittest.TestCase):
@@ -37,6 +43,20 @@ class TestScheduleFromForm(unittest.TestCase):
         schedule = schedule_from_form({})
         errors = validate_schedule(schedule)
         self.assertTrue(errors)
+
+    def test_ha_screen_enabled_checkbox_checked(self):
+        schedule = schedule_from_form(make_form(ha_enabled=True))
+        self.assertTrue(schedule['screens']['ha_screen']['enabled'])
+
+    def test_ha_screen_enabled_checkbox_unchecked(self):
+        # An unchecked checkbox is simply absent from the submitted form.
+        schedule = schedule_from_form(make_form(ha_enabled=False))
+        self.assertFalse(schedule['screens']['ha_screen']['enabled'])
+
+    def test_non_disableable_screens_never_get_an_enabled_key(self):
+        schedule = schedule_from_form(make_form())
+        for name in ('sleep_screen', 'bus_train_screen', 'daytime_screen'):
+            self.assertNotIn('enabled', schedule['screens'][name])
 
 
 class TestAtomicWriteJson(unittest.TestCase):

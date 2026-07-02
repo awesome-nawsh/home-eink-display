@@ -18,6 +18,23 @@ from datetime import time
 SCREEN_NAMES = ("sleep_screen", "bus_train_screen", "daytime_screen", "ha_screen")
 PRECEDENCE = ("sleep_screen", "bus_train_screen", "daytime_screen", "ha_screen")
 
+# Friendly labels for the web UI — SCREEN_NAMES stay the on-disk/config
+# identifiers (schedule_config.json keys, FORCE_SCREEN values); these are
+# purely cosmetic and never compared against or written anywhere.
+SCREEN_DISPLAY_NAMES = {
+    "sleep_screen": "Overnight (Sleep Screen)",
+    "bus_train_screen": "Bus & Train",
+    "daytime_screen": "Daytime Clock",
+    "ha_screen": "Home Assistant Dashboard",
+}
+
+# Screens the web UI lets the user fully switch off. Deliberately just
+# ha_screen: sleep_screen is the always-on overnight override, bus_train_screen
+# is the primary daytime content, and daytime_screen is resolve_active_screen()'s
+# final fallback for any moment none of the others claim — disabling any of
+# those three would break the "always something on screen" invariant.
+DISABLEABLE_SCREENS = ("ha_screen",)
+
 
 class ScheduleConfigError(ValueError):
     """Raised by validate_schedule() when the schedule dict is malformed."""
@@ -141,20 +158,33 @@ def load_schedule_config(path, wake_hour_fallback, sleep_hour_fallback):
     return schedule
 
 
+def _screen_enabled(window):
+    """A screen without an 'enabled' key (the common case — only
+    DISABLEABLE_SCREENS ever get one written) is always enabled."""
+    return window.get("enabled", True)
+
+
 def detect_overlaps(schedule):
     """Pure. Pairwise overlap check across the 4 named screens' windows.
     Overlap is expected/allowed (resolved at runtime by precedence in
     resolve_active_screen) — this just returns human-readable warning
-    strings describing what got overridden, for logging."""
+    strings describing what got overridden, for logging. A disabled screen
+    is skipped entirely — it can't override or be overridden."""
     screens = schedule["screens"]
     windows = {}
     for name in SCREEN_NAMES:
         w = screens[name]
+        if not _screen_enabled(w):
+            continue
         windows[name] = _window_ranges(parse_hhmm(w["start"]), parse_hhmm(w["end"]))
 
     warnings = []
     for i, higher in enumerate(PRECEDENCE):
+        if higher not in windows:
+            continue
         for lower in PRECEDENCE[i + 1:]:
+            if lower not in windows:
+                continue
             if _ranges_overlap(windows[higher], windows[lower]):
                 warnings.append(
                     f"{higher} schedule overlaps {lower} schedule; {higher} takes precedence"
@@ -182,8 +212,10 @@ def resolve_active_screen(schedule, day_type, now):
     2. Elif day_type == 'school_day' and now falls within bus_train_screen's
        window -> 'bus_train_screen'.
     3. Elif now falls within daytime_screen's window -> 'daytime_screen'.
-    4. Elif now falls within ha_screen's window -> 'ha_screen' (lowest
-       precedence — only shows in a gap the other three don't claim).
+    4. Elif ha_screen is enabled and now falls within its window ->
+       'ha_screen' (lowest precedence — only shows in a gap the other
+       three don't claim; a disabled ha_screen behaves as if it had no
+       window at all, so this step is simply skipped).
     5. Else (a gap none of the four windows cover) -> 'daytime_screen' as
        the safe default, so something is always on screen.
     """
@@ -205,7 +237,7 @@ def resolve_active_screen(schedule, day_type, now):
         return "daytime_screen"
 
     ha = screens["ha_screen"]
-    if _time_in_window(now_time, parse_hhmm(ha["start"]), parse_hhmm(ha["end"])):
+    if _screen_enabled(ha) and _time_in_window(now_time, parse_hhmm(ha["start"]), parse_hhmm(ha["end"])):
         return "ha_screen"
 
     return "daytime_screen"

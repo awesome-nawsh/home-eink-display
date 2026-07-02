@@ -154,6 +154,15 @@ details.card[open] > summary h2::after {
     max-width: 100%;
 }
 
+/* Visually dims a disabled screen's Start/End time inputs on the Schedule
+   page — deliberately NOT the disabled attribute, which would stop the
+   browser submitting the field and wipe the stored time on save. */
+.screen-window-dimmed {
+    opacity: 0.45;
+    pointer-events: none;
+    background: #f3f4f6;
+}
+
 .form-group {
     margin-bottom: 20px;
 }
