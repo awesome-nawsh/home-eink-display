@@ -90,6 +90,12 @@ FONT_SECTION = 20    # weather header (bold) / train body font size
 FONT_HEADER = 28     # bold section title font size: bus/train headers, DEBUG MODE
 FONT_CLOCK = 64      # daytime_screen word clock ("Quarter past eleven" must fit 800px)
 
+# Display typeface — a friendly name from render/common.py's FONT_REGISTRY
+# ('Atkinson Regular'/'Atkinson Medium'/'Atkinson SemiBold'/'Inter'/
+# 'IBM Plex Sans'/'Noto Sans'). Unknown names fall back to Atkinson Regular
+# with a logged warning. Restart-required, like most .env values.
+DISPLAY_FONT = os.getenv('DISPLAY_FONT', 'Atkinson Regular')
+
 # Header layout (shared by the boot screen, main view, and debug screen)
 HEADER_ICON_X = 15
 HEADER_ICON_Y = 5

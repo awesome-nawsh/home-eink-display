@@ -8,24 +8,63 @@ from functools import lru_cache
 
 from PIL import Image, ImageDraw, ImageFont
 
-from config import picdir, SCREEN_WIDTH, SCREEN_HEIGHT
+from config import picdir, SCREEN_WIDTH, SCREEN_HEIGHT, DISPLAY_FONT
 
 
 # ============================================================================
 # FONT MANAGEMENT
 # ============================================================================
+# The display typeface is chosen via DISPLAY_FONT in .env (web panel:
+# "Display & Fonts"). Each entry maps a friendly name to a
+# (regular, bold) file pair under pic/. The bundled non-Atkinson families
+# are OFL-licensed; each ships with its OFL.txt alongside the files.
+FONT_REGISTRY = {
+    'Atkinson Regular': ('AtkinsonHyperlegibleNext-Regular.otf',
+                         'AtkinsonHyperlegibleNext-Bold.otf'),
+    'Atkinson Medium': ('Atkinson Hyperlegible Next/AtkinsonHyperlegibleNext-Medium.otf',
+                        'Atkinson Hyperlegible Next/AtkinsonHyperlegibleNext-ExtraBold.otf'),
+    'Atkinson SemiBold': ('Atkinson Hyperlegible Next/AtkinsonHyperlegibleNext-SemiBold.otf',
+                          'Atkinson Hyperlegible Next/AtkinsonHyperlegibleNext-ExtraBold.otf'),
+    'Inter': ('Inter/Inter-Regular.ttf', 'Inter/Inter-Bold.ttf'),
+    'IBM Plex Sans': ('IBMPlexSans/IBMPlexSans-Regular.ttf',
+                      'IBMPlexSans/IBMPlexSans-Bold.ttf'),
+    'Noto Sans': ('NotoSans/NotoSans-Regular.ttf', 'NotoSans/NotoSans-Bold.ttf'),
+}
+_FALLBACK_FONT_NAME = 'Atkinson Regular'
+
+
+def resolve_font_pair(name):
+    """Registry name -> (regular_path, bold_path) absolute paths, falling
+    back to Atkinson Regular (with a warning) on an unknown name or missing
+    file — a typo'd DISPLAY_FONT must never take the display down."""
+    files = FONT_REGISTRY.get(name)
+    if files is None:
+        logging.warning(f"DISPLAY_FONT '{name}' not in the font registry - using {_FALLBACK_FONT_NAME}")
+        files = FONT_REGISTRY[_FALLBACK_FONT_NAME]
+    paths = tuple(os.path.join(picdir, f) for f in files)
+    if not all(os.path.exists(p) for p in paths):
+        logging.warning(f"Font file(s) missing for '{name}' - using {_FALLBACK_FONT_NAME}")
+        paths = tuple(os.path.join(picdir, f) for f in FONT_REGISTRY[_FALLBACK_FONT_NAME])
+    return paths
+
+
+_regular_font_path, _bold_font_path = resolve_font_pair(DISPLAY_FONT)
+
+
 @lru_cache(maxsize=8)
-def get_font(size, font_name='AtkinsonHyperlegibleNext-Regular.otf'):
-    """Cache fonts to avoid reloading from disk."""
-    return ImageFont.truetype(os.path.join(picdir, font_name), size)
+def get_font(size, font_name=None):
+    """Cache fonts to avoid reloading from disk. `font_name` (a path under
+    pic/) overrides the DISPLAY_FONT-selected regular face."""
+    path = os.path.join(picdir, font_name) if font_name else _regular_font_path
+    return ImageFont.truetype(path, size)
 
 @lru_cache(maxsize=4)
 def get_font_bold(size):
-    """Get bold variant of Atkinson Hyperlegible font."""
+    """Get the bold face of the DISPLAY_FONT-selected family."""
     try:
-        return ImageFont.truetype(os.path.join(picdir, 'AtkinsonHyperlegibleNext-Bold.otf'), size)
+        return ImageFont.truetype(_bold_font_path, size)
     except OSError:
-        logging.warning("Atkinson bold font not found, using regular")
+        logging.warning("Bold font not found, using regular")
         return get_font(size)
 
 @lru_cache(maxsize=4)

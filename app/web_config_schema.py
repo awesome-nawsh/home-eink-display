@@ -19,6 +19,18 @@ CONFIG_SCHEMA = {
         'API_BUS_STOP_INFO_URL': {'type': 'text', 'label': 'Bus Stop Info API URL', 'required': False, 'default': 'https://datamall2.mytransport.sg/ltaodataservice/BusStops'},
         'LOG_LEVEL': {'type': 'select', 'label': 'Log Level', 'options': ['DEBUG', 'INFO', 'WARNING', 'ERROR'], 'required': False},
     },
+    'Display & Fonts': {
+        # Options mirror render/common.py's FONT_REGISTRY keys — kept as a
+        # literal so this pure-data module never imports PIL; a test asserts
+        # the two stay in sync.
+        'DISPLAY_FONT': {
+            'type': 'select', 'label': 'Display Typeface',
+            'options': ['Atkinson Regular', 'Atkinson Medium', 'Atkinson SemiBold',
+                        'Inter', 'IBM Plex Sans', 'Noto Sans'],
+            'required': False, 'default': 'Atkinson Regular',
+            'note': 'Requires a service restart to apply.',
+        },
+    },
     'Journey Time Settings': {
         'SHOW_JOURNEY_TIME': {'type': 'checkbox', 'label': 'Enable Journey Time Tracking', 'required': False},
         'BUS_SERVICES_TO_TRACK': {'type': 'text', 'label': 'Bus Services to Track (comma-separated)', 'required': False, 'placeholder': '67,969,75'},
