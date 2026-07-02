@@ -1,6 +1,7 @@
-"""Data fetching: LTA bus/train APIs, Home Assistant weather, journey-time
-routing (OneMap/Google), plus the shared HTTP session, response cache, and
-per-endpoint backoff manager they're all built on.
+"""Data fetching: LTA bus/train APIs, weather (Home Assistant with an
+Open-Meteo fallback), journey-time routing (OneMap/Google), plus the shared
+HTTP session, response cache, and per-endpoint backoff manager they're all
+built on.
 """
 import json
 import logging
@@ -543,28 +544,34 @@ def get_train_disruptions(force_refresh=False):
         system_health.record_api_call('train', success=False)
         return _stale_or_unavailable(cache_key, 'train')
 
-def get_weather_from_homeassistant(force_refresh=False):
-    """Fetch weather data from Home Assistant with caching and backoff."""
+def map_wmo_code_to_condition(code, is_day=True):
+    """Map an Open-Meteo WMO weather code to the condition strings the rest
+    of the app already understands (render/common.py's get_weather_icon() and
+    the on-screen condition text) — matching Home Assistant's vocabulary so
+    both weather sources render identically. Pure, unit-tested."""
+    if not isinstance(code, int):  # missing/None weather_code from the API
+        return 'partlycloudy'
+    if code == 0:
+        return 'sunny' if is_day else 'clear-night'
+    if code in (1, 2):
+        return 'partlycloudy'
+    if code == 3 or code in (45, 48):  # overcast, fog
+        return 'cloudy'
+    if 51 <= code <= 67 or 80 <= code <= 82:  # drizzle, rain, showers
+        return 'rainy'
+    if 71 <= code <= 77 or code in (85, 86):  # snow (no dedicated icon; falls back to partly-cloudy)
+        return 'snowy'
+    if 95 <= code <= 99:  # thunderstorms
+        return 'rainy'
+    return 'partlycloudy'
+
+
+def _fetch_weather_ha():
+    """Raw Home Assistant weather fetch — no caching/backoff (get_weather()
+    owns those). Returns the weather dict or None."""
     if not HOME_ASSISTANT_API_URL or not HOME_ASSISTANT_TOKEN:
         logging.debug("Home Assistant API URL or token not configured")
         return None
-
-    cache_key = "weather_data"
-
-    # Weather's failure paths use get_stale() with no max_age — unlike bus
-    # arrival times, a weather reading ages gracefully, so last-known-good
-    # is served indefinitely during an HA outage rather than erroring out.
-    if not force_refresh and not backoff_manager.should_retry(cache_key):
-        stale = cache.get_stale(cache_key)
-        return stale[0] if stale else None
-
-    if not force_refresh:
-        cached_data = cache.get(cache_key, duration=WEATHER_CACHE_DURATION)
-        if cached_data is not None:
-            logging.debug("Using cached weather data")
-            return cached_data
-
-    logging.debug("Fetching weather from Home Assistant...")
 
     url = f"{HOME_ASSISTANT_API_URL}/api/states/{HOME_ASSISTANT_WEATHER_ENTITY}"
     headers = {
@@ -576,32 +583,104 @@ def get_weather_from_homeassistant(force_refresh=False):
         response = http_session.get(url, headers=headers, timeout=HTTP_TIMEOUT_DEFAULT)
         response.raise_for_status()
         data = response.json()
-
-        weather = {
+        return {
             'temperature': data['attributes'].get('temperature'),
             'condition': data['state'],
             'humidity': data['attributes'].get('humidity'),
             'wind_speed': data['attributes'].get('wind_speed'),
             'forecast': data['attributes'].get('forecast', [])
         }
+    except requests.RequestException as e:
+        logging.error(f"Error fetching weather from Home Assistant: {e}")
+        return None
 
+
+def _fetch_weather_openmeteo():
+    """Raw Open-Meteo weather fetch (free, no API key) — the fallback source
+    when Home Assistant is unconfigured or failing. No caching/backoff.
+    Location: WEATHER_LAT/WEATHER_LON if set, else the bus stop's own
+    coordinates. Returns the same dict shape as _fetch_weather_ha() or None."""
+    if WEATHER_LAT is not None and WEATHER_LON is not None:
+        lat, lon = WEATHER_LAT, WEATHER_LON
+    else:
+        coords = get_bus_stop_coordinates(BUS_STOP_CODE_A)
+        if not coords:
+            logging.warning("Open-Meteo fallback skipped - no coordinates available "
+                            "(set WEATHER_LAT/WEATHER_LON or check the LTA bus stop lookup)")
+            return None
+        lat, lon = coords
+
+    try:
+        response = http_session.get(
+            'https://api.open-meteo.com/v1/forecast',
+            params={
+                'latitude': lat,
+                'longitude': lon,
+                'current': 'temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,is_day',
+                'timezone': 'auto',
+            },
+            timeout=HTTP_TIMEOUT_DEFAULT,
+        )
+        response.raise_for_status()
+        current = response.json()['current']
+        return {
+            'temperature': current.get('temperature_2m'),
+            'condition': map_wmo_code_to_condition(current.get('weather_code'),
+                                                   is_day=bool(current.get('is_day', 1))),
+            'humidity': current.get('relative_humidity_2m'),
+            'wind_speed': current.get('wind_speed_10m'),
+            'forecast': []
+        }
+    except (requests.RequestException, KeyError, TypeError) as e:
+        logging.error(f"Error fetching weather from Open-Meteo: {e}")
+        return None
+
+
+def get_weather(force_refresh=False):
+    """Weather with caching, backoff, and a two-source chain: Home Assistant
+    first (skipped when unconfigured), then Open-Meteo. A backoff failure is
+    recorded only when BOTH sources fail; either source succeeding resets it.
+    (Side effect: while HA is down but Open-Meteo works, HA is retried on
+    every refresh rather than backing off — harmless at the ~30-min weather
+    cadence.)"""
+    cache_key = "weather_data"
+
+    # Weather's failure paths use get_stale() with no max_age — unlike bus
+    # arrival times, a weather reading ages gracefully, so last-known-good
+    # is served indefinitely during an outage rather than erroring out.
+    if not force_refresh and not backoff_manager.should_retry(cache_key):
+        stale = cache.get_stale(cache_key)
+        return stale[0] if stale else None
+
+    if not force_refresh:
+        cached_data = cache.get(cache_key, duration=WEATHER_CACHE_DURATION)
+        if cached_data is not None:
+            logging.debug("Using cached weather data")
+            return cached_data
+
+    weather = _fetch_weather_ha()
+    source = 'Home Assistant'
+    if weather is None:
+        weather = _fetch_weather_openmeteo()
+        source = 'Open-Meteo'
+
+    if weather is not None:
         cache.set(cache_key, weather)
         backoff_manager.reset(cache_key)
         system_health.record_api_call('weather', success=True)
-        logging.info(f"Weather updated: {weather['temperature']}°C, {weather['condition']}")
+        logging.info(f"Weather updated via {source}: "
+                     f"{weather['temperature']}°C, {weather['condition']}")
         return weather
 
-    except requests.RequestException as e:
-        logging.error(f"Error fetching weather from Home Assistant: {e}")
-        backoff_manager.record_failure(cache_key)
-        system_health.record_api_call('weather', success=False)
+    backoff_manager.record_failure(cache_key)
+    system_health.record_api_call('weather', success=False)
 
-        stale = cache.get_stale(cache_key)
-        if stale:
-            data, age = stale
-            logging.warning(f"Using stale weather cache (age: {int(age)}s)")
-            return data
-        return None
+    stale = cache.get_stale(cache_key)
+    if stale:
+        data, age = stale
+        logging.warning(f"Using stale weather cache (age: {int(age)}s)")
+        return data
+    return None
 
 def get_day_type_sensors():
     """Fetch binary_sensor.school_day and binary_sensor.workday_sensor raw
@@ -648,7 +727,7 @@ def fetch_data_parallel(force_refresh=False):
     """Fetch bus, train, weather data in parallel, then calculate journey times."""
     future_bus = _fetch_executor.submit(get_bus_arrival, BUS_STOP_CODE_A, force_refresh)
     future_train = _fetch_executor.submit(get_train_disruptions, force_refresh)
-    future_weather = _fetch_executor.submit(get_weather_from_homeassistant, force_refresh)
+    future_weather = _fetch_executor.submit(get_weather, force_refresh)
 
     bus_info = future_bus.result()
     train_info = future_train.result()
