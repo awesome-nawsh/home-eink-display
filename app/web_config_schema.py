@@ -31,7 +31,8 @@ CONFIG_SCHEMA = {
         'DISPLAY_FONT': {
             'type': 'select', 'label': 'Display Typeface',
             'options': ['Atkinson Regular', 'Atkinson Medium', 'Atkinson SemiBold',
-                        'Inter', 'IBM Plex Sans', 'Noto Sans'],
+                        'Inter', 'IBM Plex Sans', 'Noto Sans',
+                        'Bitter', 'Literata', 'Lexend', 'Fira Sans'],
             'required': False, 'default': 'Atkinson Regular',
             'note': 'Requires a service restart to apply.',
         },
