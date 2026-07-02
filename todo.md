@@ -122,6 +122,12 @@ See `design.md` for the design rationale behind each phase.
 - [x] Move the LTA API URLs (`API_BUS_URL`, `API_TRAIN_URL`, `API_BUS_STOP_INFO_URL`) into an
       "Advanced" section — done in v15 (Advanced card, collapsed by default, also holds the
       boot-check knobs)
+- [ ] Group configurations by integration, with enable/disable gating: everything
+      Home Assistant-related in its own tab/section (API URL, token, weather/day-type/AQI
+      entities, ha_screen, dashboard URL), same for MQTT — each with a master "enabled"
+      toggle, and the section's fields greyed out (visible but not editable) until the
+      integration is enabled. Would need per-category enable flags in `CONFIG_SCHEMA`
+      plus a little template/JS to toggle the disabled state.
 
 ## Phase 4 — Dynamic (no-restart) config reload for the schedule and `FORCE_SCREEN`
 
@@ -159,6 +165,13 @@ runtime cost) — tracked here so they aren't re-flagged as new discoveries late
 
 - [x] Weather fallback — done in v15: `get_weather()` chains Home Assistant → Open-Meteo
       (free/no-key, `WEATHER_LAT`/`WEATHER_LON` or the bus stop's coordinates) → stale cache.
+- [ ] Full no-HA/no-MQTT operation: audit every HA/MQTT-dependent feature and make sure each
+      has a public-web-API fallback (or degrades cleanly) when those integrations are disabled.
+      Weather (Open-Meteo) and air quality (NEA PSI) already fall back; still HA-only today:
+      day-type resolution (falls back to `DAY_TYPE_FALLBACK` — could use a public school-holiday/
+      workday calendar instead), `ha_screen` (inherently HA, should just be skippable), and
+      MQTT-triggered refresh/reload (mtime-poll backstop already covers reload; manual refresh
+      has no non-MQTT path yet). Ties into the enable/disable gating item under Web UI follow-ups.
 - [ ] Calendar integration: for users without Home Assistant, or who'd rather not route calendar
       data through it, add a direct calendar integration (subscribe to a calendar `.ics` URL/feed)
       as an alternative to (or in addition to) any future HA-based calendar display.
