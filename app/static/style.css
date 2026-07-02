@@ -113,6 +113,33 @@ body {
     border-bottom: 2px solid #667eea;
 }
 
+/* Collapsible settings cards (<details class="card">) — the h2 lives inside
+   the <summary> so the whole header row is the click target. */
+details.card > summary {
+    cursor: pointer;
+    list-style: none;
+}
+details.card > summary::-webkit-details-marker {
+    display: none;
+}
+details.card > summary h2 {
+    display: inline-block;
+    width: 100%;
+    margin-bottom: 0;
+}
+details.card[open] > summary h2 {
+    margin-bottom: 20px;
+}
+details.card > summary h2::after {
+    content: "▸";
+    float: right;
+    color: #667eea;
+    transition: transform 0.15s;
+}
+details.card[open] > summary h2::after {
+    transform: rotate(90deg);
+}
+
 .form-group {
     margin-bottom: 20px;
 }

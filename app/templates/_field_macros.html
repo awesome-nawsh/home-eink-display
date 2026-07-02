@@ -40,7 +40,7 @@
             <option value="">-- Select --</option>
             {% for option in field_config.options %}
                 <option value="{{ option }}" {% if config.get(field_name) == option %}selected{% endif %}>
-                    {{ option if option else '(none)' }}
+                    {{ option }}
                 </option>
             {% endfor %}
         </select>
