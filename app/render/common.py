@@ -29,6 +29,13 @@ FONT_REGISTRY = {
     'IBM Plex Sans': ('IBMPlexSans/IBMPlexSans-Regular.ttf',
                       'IBMPlexSans/IBMPlexSans-Bold.ttf'),
     'Noto Sans': ('NotoSans/NotoSans-Regular.ttf', 'NotoSans/NotoSans-Bold.ttf'),
+    # E-ink-oriented faces: Bitter (slab serif designed for e-readers),
+    # Literata (Google Play Books' e-reading serif), Lexend (legibility-
+    # research sans), Fira Sans (designed for low-res screens).
+    'Bitter': ('Bitter/Bitter-Regular.ttf', 'Bitter/Bitter-Bold.ttf'),
+    'Literata': ('Literata/Literata-Regular.ttf', 'Literata/Literata-Bold.ttf'),
+    'Lexend': ('Lexend/Lexend-Regular.ttf', 'Lexend/Lexend-Bold.ttf'),
+    'Fira Sans': ('FiraSans/FiraSans-Regular.ttf', 'FiraSans/FiraSans-Bold.ttf'),
 }
 _FALLBACK_FONT_NAME = 'Atkinson Regular'
 

@@ -31,7 +31,8 @@ class TestFontRegistry(unittest.TestCase):
         self.assertEqual(list(options), list(FONT_REGISTRY.keys()))
 
     def test_every_bundled_family_ships_its_license(self):
-        for family_dir in ('Inter', 'IBMPlexSans', 'NotoSans'):
+        for family_dir in ('Inter', 'IBMPlexSans', 'NotoSans',
+                           'Bitter', 'Literata', 'Lexend', 'FiraSans'):
             self.assertTrue(os.path.exists(os.path.join(picdir, family_dir, 'OFL.txt')),
                             f"{family_dir}/OFL.txt missing")
 
