@@ -67,8 +67,9 @@ See `design.md` for the design rationale behind each phase.
 ## Deferred to a later phase (explicitly out of scope for Phase 2)
 
 - [ ] Richer `ha_screen` behavior (e.g. theme/config surfaced once `web_config.py` is rewritten)
-- [ ] Real content for `daytime_screen` (currently a placeholder)
-- [ ] Distinguish `work_day` vs `off_day` content/behavior (Phase 2 treats both as "not school_day")
+- [x] Real content for `daytime_screen` — done in v15 (word clock + date + weather, quarter-hour redraws)
+- [ ] Distinguish `work_day` vs `off_day` content/behavior (Phase 2 treats both as "not school_day";
+      v15's word-clock daytime screen still shows the same view for both)
 - [x] Surface schedule-conflict warnings in a web-config UI — done in Phase 3 (`/schedule` page)
 - [ ] Multi-period-per-day schedules (Phase 2 supports exactly one start/end window per screen)
 - [ ] `tools/layout_editor.html` — reflect the `sleep_screen`/`ha_screen`/`daytime_screen` rename/split
@@ -114,12 +115,13 @@ See `design.md` for the design rationale behind each phase.
 ### Explicitly deferred
 - [ ] Login rate-limiting/lockout — single-admin LAN app, low risk, conscious skip
 
-## Web UI follow-ups (post-Phase-3, not yet scheduled to a phase)
+## Web UI follow-ups (post-Phase-3)
 
-- [ ] Sort/categorize the Settings page fields better — current `CONFIG_SCHEMA` grouping is a
-      bit flat/arbitrary; group by how often a field actually needs touching, not just by subsystem
-- [ ] Move the LTA API URLs (`API_BUS_URL`, `API_TRAIN_URL`, `API_BUS_STOP_INFO_URL`) into an
-      "Advanced" section — these only need changing if LTA changes their API, not day-to-day config
+- [x] Sort/categorize the Settings page fields better — done in v15 (categories ordered by
+      touch-frequency, collapsible `<details>` cards)
+- [x] Move the LTA API URLs (`API_BUS_URL`, `API_TRAIN_URL`, `API_BUS_STOP_INFO_URL`) into an
+      "Advanced" section — done in v15 (Advanced card, collapsed by default, also holds the
+      boot-check knobs)
 
 ## Phase 4 — Dynamic (no-restart) config reload for the schedule and `FORCE_SCREEN`
 
@@ -151,26 +153,24 @@ runtime cost) — tracked here so they aren't re-flagged as new discoveries late
       parameter branch in `draw_timestamp`)
 - [ ] ~22 unused MDI icon constants in `render/common.py` (kept as a glyph palette)
 - [ ] Dead `.btn-danger` CSS rule in `app/static/style.css`
-- [ ] FORCE_SCREEN dropdown renders two empty-value options ("-- Select --" and "(none)")
+- [x] FORCE_SCREEN dropdown renders two empty-value options — fixed in v15
 
 ## Future features (not yet scheduled to a phase)
 
-- [ ] Weather fallback: `get_weather_from_homeassistant()` currently has no source at all if HA is
-      unreachable/not configured — add a fallback to a publicly available weather API (e.g.
-      Open-Meteo, free/no-key) so weather still shows without depending on Home Assistant.
+- [x] Weather fallback — done in v15: `get_weather()` chains Home Assistant → Open-Meteo
+      (free/no-key, `WEATHER_LAT`/`WEATHER_LON` or the bus stop's coordinates) → stale cache.
 - [ ] Calendar integration: for users without Home Assistant, or who'd rather not route calendar
       data through it, add a direct calendar integration (subscribe to a calendar `.ics` URL/feed)
       as an alternative to (or in addition to) any future HA-based calendar display.
 
-## Typography (not yet scheduled to a phase)
+## Typography
 
-- [ ] Font chooser: today's font is hardcoded to Atkinson Hyperlegible Next (`render/common.py`'s
-      `get_font()`/`get_font_bold()`, loaded from `pic/`) — add a way to pick from a set of bundled
-      fonts (via `.env`/the web config panel) instead of editing code to swap fonts.
-- [ ] Curate and bundle a small set of other fonts known to render well on e-ink at this panel's
-      resolution/viewing distance (high x-height, clear digit disambiguation, works well at the
-      screen-door-effect resolution) as options for the font chooser above — e.g. other accessible/
-      legible typefaces beyond Atkinson Hyperlegible Next, licensed for redistribution in `pic/`.
+- [x] Font chooser — done in v15: `DISPLAY_FONT` in `.env`/the web panel picks from
+      `render/common.py`'s `FONT_REGISTRY`, with graceful fallback to Atkinson Regular.
+- [x] Curate and bundle e-ink-friendly typefaces — done in v15: OFL statics of Inter,
+      IBM Plex Sans, and Noto Sans bundled in `pic/<family>/` (each with its OFL.txt),
+      plus Atkinson Medium/SemiBold weight pairings. Adding further families later is a
+      one-line `FONT_REGISTRY` entry + font files + schema option.
 
 ## Architecture: modularize for easier extension (not yet scheduled to a phase)
 
