@@ -41,6 +41,12 @@ APP_DIR = os.path.dirname(os.path.realpath(__file__))
 ENV_FILE = os.path.join(APP_DIR, '.env')
 load_dotenv(ENV_FILE)
 
+# Process start time, for the status bar's "Web Panel" uptime — recorded at
+# import rather than inside a request handler, so it reflects when this
+# process actually started (a Flask reload/worker respawn resets it, which
+# is the correct signal here, distinct from bus_display's own uptime).
+WEB_CONFIG_START_TIME = datetime.now()
+
 app = Flask(__name__)
 
 # --- Configuration -----------------------------------------------------
@@ -385,19 +391,26 @@ def api_restart():
 @app.route('/api/status')
 @login_required
 def api_status():
-    """Config-file status plus the display process's own health report.
-    main.py writes the report to STATUS_FILE_PATH every loop tick (the two
-    run as separate processes, so a small JSON file is the shared channel);
-    'display' is null if the file doesn't exist yet or can't be parsed —
-    the status bar shows that as "no status reported"."""
+    """Config-file status, this panel's own uptime, plus the display
+    process's own health report. main.py writes the report to
+    STATUS_FILE_PATH every loop tick (the two run as separate processes,
+    so a small JSON file is the shared channel); 'display' is null if the
+    file doesn't exist yet or can't be parsed — the status bar shows that
+    as "no status reported". 'web_config' needs no such file — this process
+    computes its own uptime directly from WEB_CONFIG_START_TIME."""
     display_status = None
     try:
         with open(STATUS_FILE_PATH) as f:
             display_status = json.load(f)
     except (OSError, ValueError):
         pass
+    web_uptime_seconds = int((datetime.now() - WEB_CONFIG_START_TIME).total_seconds())
     return jsonify({
         'config_exists': os.path.exists(ENV_FILE),
+        'web_config': {
+            'uptime_seconds': web_uptime_seconds,
+            'uptime_formatted': str(timedelta(seconds=web_uptime_seconds)),
+        },
         'last_modified': (
             datetime.fromtimestamp(os.path.getmtime(ENV_FILE)).isoformat()
             if os.path.exists(ENV_FILE) else None

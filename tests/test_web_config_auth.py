@@ -160,6 +160,18 @@ class TestCSRF(unittest.TestCase):
             self.assertNotEqual(resp.status_code, 400)
 
 
+class TestApiStatusWebConfigUptime(unittest.TestCase):
+    def test_web_config_uptime_present_and_nonnegative(self):
+        with web_config.app.test_client() as client:
+            login(client)
+            resp = client.get('/api/status')
+            self.assertEqual(resp.status_code, 200)
+            web_config_status = resp.get_json()['web_config']
+            self.assertIn('uptime_seconds', web_config_status)
+            self.assertIn('uptime_formatted', web_config_status)
+            self.assertGreaterEqual(web_config_status['uptime_seconds'], 0)
+
+
 class TestFontSample(unittest.TestCase):
     def test_known_font_returns_png(self):
         with web_config.app.test_client() as client:
