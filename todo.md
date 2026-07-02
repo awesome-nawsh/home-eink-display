@@ -204,6 +204,13 @@ more plugin-like/registry-based rather than hardcoded:
       function, and its own config fields) so adding a new screen — or a new config section — doesn't
       require touching `main.py`'s dispatch, `scheduler.py`'s `SCREEN_NAMES`, and `CONFIG_SCHEMA` all
       by hand in three places.
+- [ ] Decompose each screen into a **UI renderer** and a **UI content provider**: the renderer knows
+      only how to draw a layout (positions, fonts, icons, regions); the content provider supplies the
+      data that fills it. With that split, screens and the web UI can be built from a shared *layout
+      model* — a layout editor writes a JSON file describing the screen, and at runtime the renderer
+      consumes that JSON + the content provider's data to produce the render. This is the enabler for
+      the layout editor / previewer revamp below and for a data-driven (rather than hardcoded-PIL)
+      screen definition.
 - [ ] A "rolling"/rotating screen type: cycles through multiple sub-views on a timer within its own
       schedule window (distinct from today's one-view-per-screen model).
 - [ ] A custom image-slideshow screen: let the user point at a local folder (or a set of URLs) of
@@ -211,3 +218,7 @@ more plugin-like/registry-based rather than hardcoded:
 - [ ] Support more than one `ha_screen` target: let the user configure a set of HA dashboard
       URLs to rotate through or pick from, instead of the single `HOME_ASSISTANT_DASHBOARD_URL`
       today.
+- [ ] Revamp the local HTML previewer (`tools/layout_editor.html`) once the modularised
+      screen-registry UI above is rebuilt — rather than patch its stale "Sleep screen" tab now
+      (see the Phase 2 deferred item), redo it against the new registry so it reflects the actual
+      set of screens and their config fields from a single source of truth.
