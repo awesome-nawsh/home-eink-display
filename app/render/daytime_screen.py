@@ -72,28 +72,34 @@ def display_daytime_screen(display_mgr, model):
         temp_text = f"{temp}°C" if temp is not None else ""
         temp_font = get_font_bold(FONT_CLOCK // 2)
 
-        # Center the icon + temperature as one group: measure the text, then
-        # lay both out side by side around the midline.
-        temp_width = draw.textlength(temp_text, font=temp_font) if temp_text else 0
-        group_width = icon_size + (gap + temp_width if temp_text else 0)
-        icon_x = center_x - group_width / 2 + icon_size / 2
-
-        draw_mdi_icon(draw, icon_x, row_y, get_weather_icon(weather.get('condition')),
-                      size=icon_size, color=0, anchor="mm")
-        if temp_text:
-            draw_r.text((icon_x + icon_size / 2 + gap, row_y), temp_text,
-                        font=temp_font, fill=0, anchor="lm")
-
         # HA condition strings are squashed lowercase ('partlycloudy'); give
         # the known multi-word ones a readable form before title-casing.
         raw = weather.get('condition') or ''
         condition = {'partlycloudy': 'partly cloudy',
                      'lightning-rainy': 'thundery'}.get(raw, raw).replace('-', ' ').title()
 
-        # Detail row: condition, then icon-labelled humidity and air quality
-        # (matching bus_train's weather section), composed as (icon, text)
-        # segments and centered as one group.
-        segments = [(None, condition)]
+        # Weather line: icon + temperature + condition text, centered as one
+        # group around the midline.
+        condition_font = get_font(FONT_SECTION)
+        temp_width = draw.textlength(temp_text, font=temp_font) if temp_text else 0
+        condition_width = draw.textlength(condition, font=condition_font) if condition else 0
+        group_width = (icon_size
+                       + (gap + temp_width if temp_text else 0)
+                       + (gap + condition_width if condition else 0))
+        icon_x = center_x - group_width / 2 + icon_size / 2
+
+        draw_mdi_icon(draw, icon_x, row_y, get_weather_icon(weather.get('condition')),
+                      size=icon_size, color=0, anchor="mm")
+        x = icon_x + icon_size / 2 + gap
+        if temp_text:
+            draw_r.text((x, row_y), temp_text, font=temp_font, fill=0, anchor="lm")
+            x += temp_width + gap
+        if condition:
+            draw.text((x, row_y), condition, font=condition_font, fill=0, anchor="lm")
+
+        # Second row: icon-labelled humidity and air quality (matching
+        # bus_train's weather section), centered as one group.
+        segments = []
         if weather.get('humidity') is not None:
             segments.append((MDI.WATER_PERCENT, f"{weather['humidity']}%"))
         if weather.get('aqi') is not None:
