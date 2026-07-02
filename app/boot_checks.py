@@ -89,12 +89,12 @@ def run_all_checks():
         ("LTA API", check_lta_api()),
         ("Home Assistant", check_home_assistant()),
     ]
-    logging.info(f"Boot connectivity checks: {results}")
+    logging.info("Boot connectivity checks: " + ", ".join(format_checklist_lines(results)))
     return results
 
 
 def format_checklist_lines(results):
     """Pure formatting: [(label, bool), ...] -> ['Network: OK', ...].
-    Kept separate from run_all_checks() so tests can feed fixed results in
-    without touching the network."""
+    Used for run_all_checks()'s log line; kept separate so tests can feed
+    fixed results in without touching the network."""
     return [f"{label}: {'OK' if ok else 'FAIL'}" for label, ok in results]

@@ -57,6 +57,17 @@ CONFIG_SCHEMA = {
                                           'note': 'Renamed from HOME_ASSISTANT_SLEEP_URL, which is still read as a fallback if this is unset, but no longer written by this UI.'},
         'WEATHER_CACHE_DURATION': {'type': 'number', 'label': 'Weather Cache Duration (seconds)', 'required': False, 'default': '1800'},
     },
+    'ha_screen (Dashboard Screenshot)': {
+        # Renamed from the legacy SLEEP_SCREEN_* prefix — config.py still
+        # reads the old names as fallbacks, but this UI writes the new ones.
+        'HA_SCREEN_DASHBOARD': {'type': 'text', 'label': 'Dashboard to Screenshot', 'required': False, 'placeholder': 'http://homeassistant.local:8123/lovelace/eink'},
+        'HA_SCREEN_EINK_MODE': {'type': 'select', 'label': 'Puppeteer E-ink Mode', 'options': ['1', '2'], 'required': False,
+                                 'note': '1 = black/white, 2 = black/white/red'},
+        'HA_SCREEN_ZOOM': {'type': 'text', 'label': 'Zoom Level', 'required': False, 'default': '1'},
+        'HA_SCREEN_FORMAT': {'type': 'text', 'label': 'Output Format (optional)', 'required': False, 'placeholder': 'png'},
+        'HA_SCREEN_WAIT': {'type': 'number', 'label': 'Wait Before Screenshot (ms)', 'required': False, 'default': '5000'},
+        'HA_SCREEN_THEME': {'type': 'text', 'label': 'HA Theme', 'required': False, 'default': 'Graphite E-ink Light'},
+    },
     'MQTT Settings': {
         'MQTT_ENABLED': {'type': 'checkbox', 'label': 'Enable MQTT', 'required': False},
         'MQTT_BROKER': {'type': 'text', 'label': 'MQTT Broker Address', 'required': False, 'default': 'localhost'},

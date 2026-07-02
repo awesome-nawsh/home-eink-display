@@ -9,6 +9,7 @@ verification and is treated as an empty (logged-out) session. See
 validate_web_config() for the startup guard that refuses to run with a
 placeholder secret key or default password.
 """
+import json
 import logging
 import os
 import secrets
@@ -55,6 +56,8 @@ WAKE_HOUR = int(os.getenv('WAKE_HOUR', '7'))
 SLEEP_HOUR = int(os.getenv('SLEEP_HOUR', '22'))
 
 SECRETS_KEY_PATH = os.getenv('SECRETS_KEY_PATH', os.path.join(APP_DIR, '.encryption_key'))
+# Must match config.py's default — where main.py drops its health snapshot
+STATUS_FILE_PATH = os.getenv('STATUS_FILE_PATH', '/tmp/bus_display_status.json')
 
 KNOWN_BAD_SECRET_KEYS = {'', 'BusAuntieSK', 'change_this_to_a_random_string'}
 
@@ -328,12 +331,24 @@ def api_restart():
 @app.route('/api/status')
 @login_required
 def api_status():
+    """Config-file status plus the display process's own health report.
+    main.py writes the report to STATUS_FILE_PATH every loop tick (the two
+    run as separate processes, so a small JSON file is the shared channel);
+    'display' is null if the file doesn't exist yet or can't be parsed —
+    the status bar shows that as "no status reported"."""
+    display_status = None
+    try:
+        with open(STATUS_FILE_PATH) as f:
+            display_status = json.load(f)
+    except (OSError, ValueError):
+        pass
     return jsonify({
         'config_exists': os.path.exists(ENV_FILE),
         'last_modified': (
             datetime.fromtimestamp(os.path.getmtime(ENV_FILE)).isoformat()
             if os.path.exists(ENV_FILE) else None
         ),
+        'display': display_status,
     })
 
 

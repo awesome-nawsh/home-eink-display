@@ -12,20 +12,22 @@ import requests
 from PIL import Image
 
 from config import (
-    SLEEP_SCREEN_DASHBOARD, SLEEP_SCREEN_EINK_MODE, SLEEP_SCREEN_ZOOM,
-    SLEEP_SCREEN_WAIT, SLEEP_SCREEN_THEME,
+    HA_SCREEN_DASHBOARD, HA_SCREEN_EINK_MODE, HA_SCREEN_ZOOM,
+    HA_SCREEN_FORMAT, HA_SCREEN_WAIT, HA_SCREEN_THEME,
 )
 from fetchers import http_session
 
 
 def display_ha_screen(display_mgr, image_url):
     """Fetch and display the ha_screen dashboard image from Home Assistant."""
-    url_param = (f"{SLEEP_SCREEN_DASHBOARD}/0?viewport="
+    url_param = (f"{HA_SCREEN_DASHBOARD}/0?viewport="
                 f"{display_mgr.epd.width}x{display_mgr.epd.height}"
-                f"&eink={SLEEP_SCREEN_EINK_MODE}"
-                f"&zoom={SLEEP_SCREEN_ZOOM}"
-                f"&wait={SLEEP_SCREEN_WAIT}"
-                f"&theme={SLEEP_SCREEN_THEME}")
+                f"&eink={HA_SCREEN_EINK_MODE}"
+                f"&zoom={HA_SCREEN_ZOOM}"
+                f"&wait={HA_SCREEN_WAIT}"
+                f"&theme={HA_SCREEN_THEME}")
+    if HA_SCREEN_FORMAT:
+        url_param += f"&format={HA_SCREEN_FORMAT}"
 
     full_url = image_url + url_param
     logging.info(f"Fetching ha_screen dashboard from: {full_url}")

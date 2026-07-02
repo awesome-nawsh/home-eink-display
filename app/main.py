@@ -122,6 +122,7 @@ def main():
         active_screen = None
         logged_schedule_warnings = set()
         stats_counter = 0
+        day_type = None  # stays None under FORCE_SCREEN/debug; set by normal resolution
 
         # Tell systemd startup succeeded (Type=notify) — a no-op outside systemd.
         sd_notify('READY=1')
@@ -197,6 +198,15 @@ def main():
                 if warning not in logged_schedule_warnings:
                     logging.warning(f"Schedule conflict: {warning}")
                     logged_schedule_warnings.add(warning)
+
+            # Health/status snapshot for the web panel's status bar
+            system_health.write_status_file(
+                STATUS_FILE_PATH,
+                mqtt_connected=mqtt_client.connected if mqtt_client else False,
+                cache_size=len(cache.cache),
+                active_screen=screen_name,
+                day_type=day_type,
+            )
 
             screen_changed = screen_name != active_screen
 

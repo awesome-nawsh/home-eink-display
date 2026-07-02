@@ -64,10 +64,23 @@ def plan_updates(config, key):
             to_set[field_name] = encrypt_value(value, key)
             summary.append(f"Encrypted {field_name}")
 
-    if not config.get('HOME_ASSISTANT_DASHBOARD_URL') and config.get('HOME_ASSISTANT_SLEEP_URL'):
-        to_set['HOME_ASSISTANT_DASHBOARD_URL'] = config['HOME_ASSISTANT_SLEEP_URL']
-        summary.append("Set HOME_ASSISTANT_DASHBOARD_URL from HOME_ASSISTANT_SLEEP_URL "
-                        "(the old key is left in place as a fallback)")
+    # Legacy renames: copy old-name values to the new keys if the new key
+    # isn't set yet. The old keys are left in place — config.py still reads
+    # them as fallbacks, so nothing breaks if this migration is skipped.
+    legacy_renames = {
+        'HOME_ASSISTANT_DASHBOARD_URL': 'HOME_ASSISTANT_SLEEP_URL',
+        'HA_SCREEN_DASHBOARD': 'SLEEP_SCREEN_DASHBOARD',
+        'HA_SCREEN_EINK_MODE': 'SLEEP_SCREEN_EINK_MODE',
+        'HA_SCREEN_ZOOM': 'SLEEP_SCREEN_ZOOM',
+        'HA_SCREEN_FORMAT': 'SLEEP_SCREEN_FORMAT',
+        'HA_SCREEN_WAIT': 'SLEEP_SCREEN_WAIT',
+        'HA_SCREEN_THEME': 'SLEEP_SCREEN_THEME',
+    }
+    for new_key, old_key in legacy_renames.items():
+        if not config.get(new_key) and config.get(old_key):
+            to_set[new_key] = config[old_key]
+            summary.append(f"Set {new_key} from {old_key} "
+                            f"(the old key is left in place as a fallback)")
 
     if config.get('WEB_CONFIG_SECRET_KEY') in KNOWN_BAD_SECRET_KEYS:
         to_set['WEB_CONFIG_SECRET_KEY'] = secrets.token_hex(32)
