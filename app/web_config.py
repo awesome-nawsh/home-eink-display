@@ -20,6 +20,7 @@ from functools import wraps
 
 from flask import (
     Flask, render_template, request, redirect, url_for, flash, jsonify, session,
+    send_file,
 )
 from werkzeug.security import check_password_hash
 import paho.mqtt.publish as mqtt_publish
@@ -305,6 +306,35 @@ def api_refresh():
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/font_sample/<font_name>')
+@login_required
+def api_font_sample(font_name):
+    """A PIL-rendered text sample of one FONT_REGISTRY entry, drawn with the
+    exact rendering pipeline the e-ink display uses (not a browser webfont
+    approximation). Shown under the DISPLAY_FONT dropdown, swapped live by
+    web_config.js as the selection changes."""
+    # Lazy imports: PIL and the render package are only needed here, not for
+    # the rest of the panel's startup.
+    from io import BytesIO
+    from PIL import Image, ImageDraw, ImageFont
+    from render.common import FONT_REGISTRY, resolve_font_pair
+
+    if font_name not in FONT_REGISTRY:
+        return jsonify({'success': False, 'error': 'Unknown font'}), 404
+
+    regular_path, bold_path = resolve_font_pair(font_name)
+    img = Image.new('RGB', (620, 116), 'white')
+    d = ImageDraw.Draw(img)
+    d.text((12, 8), 'Quarter past two', font=ImageFont.truetype(bold_path, 42), fill='black')
+    d.text((12, 66), 'Thursday 2 July · 29°C · Humidity 68% · 0123456789',
+           font=ImageFont.truetype(regular_path, 22), fill='black')
+
+    buf = BytesIO()
+    img.save(buf, 'PNG')
+    buf.seek(0)
+    return send_file(buf, mimetype='image/png', max_age=3600)
 
 
 @app.route('/api/restart', methods=['POST'])

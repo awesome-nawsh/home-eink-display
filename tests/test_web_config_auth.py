@@ -27,7 +27,7 @@ PROTECTED_HTML_ROUTES = [
 # login_required, so a request with no established session/token at all
 # is rejected at the CSRF layer (400) before auth is even checked — still
 # correctly denied, just via a different status code.
-PROTECTED_API_GET_ROUTES = [('GET', '/api/status')]
+PROTECTED_API_GET_ROUTES = [('GET', '/api/status'), ('GET', '/api/font_sample/Inter')]
 PROTECTED_API_POST_ROUTES = [('POST', '/api/refresh'), ('POST', '/api/restart')]
 
 
@@ -158,6 +158,22 @@ class TestCSRF(unittest.TestCase):
                 token = sess['csrf_token']
             resp = client.post('/api/restart', headers={'X-CSRF-Token': token})
             self.assertNotEqual(resp.status_code, 400)
+
+
+class TestFontSample(unittest.TestCase):
+    def test_known_font_returns_png(self):
+        with web_config.app.test_client() as client:
+            login(client)
+            resp = client.get('/api/font_sample/Inter')
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.mimetype, 'image/png')
+            self.assertTrue(resp.data.startswith(b'\x89PNG'))
+
+    def test_unknown_font_404s(self):
+        with web_config.app.test_client() as client:
+            login(client)
+            resp = client.get('/api/font_sample/Comic%20Sans')
+            self.assertEqual(resp.status_code, 404)
 
 
 class TestMqttAuth(unittest.TestCase):
