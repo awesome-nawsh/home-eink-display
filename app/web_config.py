@@ -26,7 +26,7 @@ import paho.mqtt.publish as mqtt_publish
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from scheduler import load_schedule_config, validate_schedule, detect_overlaps
-from secrets_vault import get_or_create_key, encrypt_value
+from secrets_vault import get_or_create_key, encrypt_value, decrypt_value
 from web_config_schema import CONFIG_SCHEMA, COLLAPSED_CATEGORIES
 from web_config_env import read_env_file, build_env_updates, atomic_write_env_file, KNOWN_BAD_SECRET_KEYS
 from web_config_schedule_forms import schedule_from_form, atomic_write_json
@@ -188,6 +188,20 @@ def logout():
     return redirect(url_for('index'))
 
 
+def _mqtt_auth():
+    """Broker auth dict for the publish helpers below, or None when no
+    credentials are configured. MQTT_PASSWORD in .env may be vault-encrypted
+    (enc: prefix, saved that way by this very UI) — decrypt it the same way
+    config.py does for the main process; decrypt_value() passes plaintext
+    values through unchanged."""
+    username = os.getenv('MQTT_USERNAME')
+    password = os.getenv('MQTT_PASSWORD')
+    if not (username and password):
+        return None
+    return {'username': username,
+            'password': decrypt_value(password, get_or_create_key(SECRETS_KEY_PATH))}
+
+
 def publish_config_reload():
     """Best-effort MQTT ping telling the running bus_display process to
     reload its dynamic config (schedule + FORCE_SCREEN) immediately, rather
@@ -198,11 +212,7 @@ def publish_config_reload():
         mqtt_port = int(os.getenv('MQTT_PORT', '1883'))
         mqtt_topic = os.getenv('MQTT_TOPIC_CONFIG_RELOAD', 'eink/display/config_reload')
 
-        auth = None
-        if os.getenv('MQTT_USERNAME') and os.getenv('MQTT_PASSWORD'):
-            auth = {'username': os.getenv('MQTT_USERNAME'), 'password': os.getenv('MQTT_PASSWORD')}
-
-        mqtt_publish.single(mqtt_topic, 'reload', hostname=mqtt_broker, port=mqtt_port, auth=auth)
+        mqtt_publish.single(mqtt_topic, 'reload', hostname=mqtt_broker, port=mqtt_port, auth=_mqtt_auth())
     except Exception as e:
         logging.warning(f"Could not publish config_reload via MQTT: {e}")
 
@@ -291,11 +301,7 @@ def api_refresh():
         mqtt_port = int(os.getenv('MQTT_PORT', '1883'))
         mqtt_topic = os.getenv('MQTT_TOPIC_REFRESH', 'eink/display/refresh')
 
-        auth = None
-        if os.getenv('MQTT_USERNAME') and os.getenv('MQTT_PASSWORD'):
-            auth = {'username': os.getenv('MQTT_USERNAME'), 'password': os.getenv('MQTT_PASSWORD')}
-
-        mqtt_publish.single(mqtt_topic, 'refresh', hostname=mqtt_broker, port=mqtt_port, auth=auth)
+        mqtt_publish.single(mqtt_topic, 'refresh', hostname=mqtt_broker, port=mqtt_port, auth=_mqtt_auth())
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
