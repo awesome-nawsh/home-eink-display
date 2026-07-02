@@ -306,8 +306,6 @@ def validate_configuration():
     if not API_BUS_STOP_INFO_URL:
         warnings.append("API_BUS_STOP_INFO_URL not set - using default")
 
-    # ... rest of validation
-
     # Journey time configuration
     if SHOW_JOURNEY_TIME:
         if not JOURNEY_DESTINATION:

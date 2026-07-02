@@ -52,6 +52,22 @@ body {
     text-decoration: underline;
 }
 
+/* Logout is a POST form; make its button look like the nav links */
+.nav-link-button {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: #667eea;
+    font-weight: 600;
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.nav-link-button:hover {
+    text-decoration: underline;
+}
+
 .status-bar {
     background: white;
     padding: 20px;

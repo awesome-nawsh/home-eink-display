@@ -1,9 +1,10 @@
 """ha_screen: fetches a rendered Home Assistant dashboard screenshot and
 pushes it straight to the black buffer (no draw calls). Shown per its own
-schedule entry in schedule_config.json (see scheduler.py) — highest
-precedence of the three screens, regardless of day-type. Renamed from
-"sleep screen" in Phase 2, now that "sleep" is a schedule window this screen
-is driven by rather than something baked into its identity.
+schedule entry in schedule_config.json (see scheduler.py) — LOWEST
+precedence of the four screens: it only shows in a schedule gap that
+sleep_screen, bus_train_screen, and daytime_screen all leave unclaimed.
+Renamed from "sleep screen" in Phase 2, when the true overnight
+sleep_screen took over the highest-precedence role this screen used to have.
 """
 import io
 import logging

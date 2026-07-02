@@ -164,16 +164,18 @@ def detect_overlaps(schedule):
 
 def get_next_wake_time(schedule):
     """Pure. Returns sleep_screen's configured 'end' time (HH:MM string) —
-    the moment sleep_screen's window closes and a higher-priority screen can
-    no longer be pre-empted by it. Used to show "Next wake: HH:MM" on the
+    the moment the overnight window closes and the lower-priority screens
+    stop being pre-empted by it. Used to show "Next wake: HH:MM" on the
     sleep screen without needing to simulate the full precedence chain for
     every later time of day."""
     return schedule["screens"]["sleep_screen"]["end"]
 
 
 def resolve_active_screen(schedule, day_type, now):
-    """Pure. Returns (screen_name, warnings) where screen_name is one of
-    'sleep_screen', 'bus_train_screen', 'daytime_screen', 'ha_screen'.
+    """Pure. Returns one of 'sleep_screen', 'bus_train_screen',
+    'daytime_screen', 'ha_screen'. Overlap warnings are NOT computed here —
+    they only change when the schedule changes, so callers run
+    detect_overlaps() once per load_schedule_config(), not per tick.
 
     1. If now falls within sleep_screen's window -> 'sleep_screen' (ultimate
        override — always wins, regardless of day_type).
@@ -185,26 +187,25 @@ def resolve_active_screen(schedule, day_type, now):
     5. Else (a gap none of the four windows cover) -> 'daytime_screen' as
        the safe default, so something is always on screen.
     """
-    warnings = detect_overlaps(schedule)
     screens = schedule["screens"]
     now_time = now.time()
 
     sleep_window = screens["sleep_screen"]
     if _time_in_window(now_time, parse_hhmm(sleep_window["start"]), parse_hhmm(sleep_window["end"])):
-        return "sleep_screen", warnings
+        return "sleep_screen"
 
     bus_train = screens["bus_train_screen"]
     if day_type == "school_day" and _time_in_window(
         now_time, parse_hhmm(bus_train["start"]), parse_hhmm(bus_train["end"])
     ):
-        return "bus_train_screen", warnings
+        return "bus_train_screen"
 
     daytime = screens["daytime_screen"]
     if _time_in_window(now_time, parse_hhmm(daytime["start"]), parse_hhmm(daytime["end"])):
-        return "daytime_screen", warnings
+        return "daytime_screen"
 
     ha = screens["ha_screen"]
     if _time_in_window(now_time, parse_hhmm(ha["start"]), parse_hhmm(ha["end"])):
-        return "ha_screen", warnings
+        return "ha_screen"
 
-    return "daytime_screen", warnings
+    return "daytime_screen"

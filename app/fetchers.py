@@ -638,16 +638,21 @@ def get_day_type_sensors():
         system_health.record_api_call('day_type', success=False)
         return None, None
 
+# One long-lived pool rather than a fresh ThreadPoolExecutor per tick —
+# spawning and joining three threads every 30 seconds is needless churn on
+# the Pi Zero W's single core.
+_fetch_executor = ThreadPoolExecutor(max_workers=3)
+
+
 def fetch_data_parallel(force_refresh=False):
     """Fetch bus, train, weather data in parallel, then calculate journey times."""
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        future_bus = executor.submit(get_bus_arrival, BUS_STOP_CODE_A, force_refresh)
-        future_train = executor.submit(get_train_disruptions, force_refresh)
-        future_weather = executor.submit(get_weather_from_homeassistant, force_refresh)
+    future_bus = _fetch_executor.submit(get_bus_arrival, BUS_STOP_CODE_A, force_refresh)
+    future_train = _fetch_executor.submit(get_train_disruptions, force_refresh)
+    future_weather = _fetch_executor.submit(get_weather_from_homeassistant, force_refresh)
 
-        bus_info = future_bus.result()
-        train_info = future_train.result()
-        weather_info = future_weather.result()
+    bus_info = future_bus.result()
+    train_info = future_train.result()
+    weather_info = future_weather.result()
 
     # Calculate journey times using API (done after bus data is fetched)
     journey_times = {}

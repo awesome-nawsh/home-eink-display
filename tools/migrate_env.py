@@ -40,11 +40,7 @@ from werkzeug.security import generate_password_hash  # noqa: E402
 
 from secrets_vault import get_or_create_key, encrypt_value, is_encrypted  # noqa: E402
 from web_config_schema import CONFIG_SCHEMA  # noqa: E402
-from web_config_env import read_env_file, atomic_write_env_file  # noqa: E402
-
-# Must match web_config.py's own set — a value here is treated the same as
-# "unset" and gets a fresh key generated.
-KNOWN_BAD_SECRET_KEYS = {'', 'BusAuntieSK', 'change_this_to_a_random_string'}
+from web_config_env import read_env_file, atomic_write_env_file, KNOWN_BAD_SECRET_KEYS  # noqa: E402
 
 
 def plan_updates(config, key):

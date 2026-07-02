@@ -10,7 +10,8 @@ use it. That's the honest scope.
 Values are stored with an "enc:" prefix once encrypted. decrypt_value() on a
 value WITHOUT that prefix returns it unchanged (plaintext passthrough) so
 existing deployments with plaintext .env values keep working untouched —
-only new saves through the web UI get encrypted.
+values only get encrypted when saved through the web UI or migrated by
+tools/migrate_env.py.
 """
 import logging
 import os

@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from scheduler import load_schedule_config, validate_schedule, detect_overlaps
 from secrets_vault import get_or_create_key, encrypt_value
 from web_config_schema import CONFIG_SCHEMA
-from web_config_env import read_env_file, build_env_updates, atomic_write_env_file
+from web_config_env import read_env_file, build_env_updates, atomic_write_env_file, KNOWN_BAD_SECRET_KEYS
 from web_config_schedule_forms import schedule_from_form, atomic_write_json
 
 from dotenv import load_dotenv
@@ -58,8 +58,6 @@ SLEEP_HOUR = int(os.getenv('SLEEP_HOUR', '22'))
 SECRETS_KEY_PATH = os.getenv('SECRETS_KEY_PATH', os.path.join(APP_DIR, '.encryption_key'))
 # Must match config.py's default — where main.py drops its health snapshot
 STATUS_FILE_PATH = os.getenv('STATUS_FILE_PATH', '/tmp/bus_display_status.json')
-
-KNOWN_BAD_SECRET_KEYS = {'', 'BusAuntieSK', 'change_this_to_a_random_string'}
 
 app.secret_key = WEB_CONFIG_SECRET_KEY
 app.permanent_session_lifetime = timedelta(hours=8)
@@ -117,7 +115,10 @@ def login_required(view):
 
 
 # --- CSRF ----------------------------------------------------------------
-CSRF_PROTECTED_ENDPOINTS = {'login', 'save_config', 'save_schedule', 'api_restart', 'api_refresh'}
+# Every POST is CSRF-checked unless its endpoint is explicitly exempted here
+# (default-deny: a future route added without thinking about CSRF ships
+# protected, instead of silently unprotected as with the old allowlist).
+CSRF_EXEMPT_ENDPOINTS = set()
 
 
 def get_csrf_token():
@@ -130,7 +131,7 @@ def get_csrf_token():
 
 @app.before_request
 def check_csrf():
-    if request.method != 'POST' or request.endpoint not in CSRF_PROTECTED_ENDPOINTS:
+    if request.method != 'POST' or request.endpoint in CSRF_EXEMPT_ENDPOINTS:
         return None
     submitted = request.form.get('csrf_token') or request.headers.get('X-CSRF-Token', '')
     expected = session.get('csrf_token', '')
@@ -177,8 +178,10 @@ def login():
     return redirect(url_for('index'))
 
 
-@app.route('/logout')
+@app.route('/logout', methods=['POST'])
 def logout():
+    # POST (not GET) so a cross-site <img src="/logout"> can't force-logout;
+    # covered by the default-deny CSRF check like every other POST.
     session.clear()
     flash('Successfully logged out', 'info')
     return redirect(url_for('index'))
@@ -300,10 +303,11 @@ def api_refresh():
 @app.route('/api/restart', methods=['POST'])
 @login_required
 def api_restart():
-    """Restart the bus_display systemd service — required for .env/schedule
-    changes to take effect (config is only loaded once at process start).
-    Requires a one-time passwordless-sudo setup; see
-    systemd/bus_display_restart.sudoers.example."""
+    """Restart the bus_display systemd service — required for most .env
+    changes to take effect (config is loaded once at process start; the
+    schedule and FORCE_SCREEN are the exceptions, applying live via the
+    config_reload mechanism). Requires a one-time passwordless-sudo setup;
+    see systemd/bus_display_restart.sudoers.example."""
     try:
         subprocess.run(
             ['sudo', 'systemctl', 'restart', 'bus_display'],
