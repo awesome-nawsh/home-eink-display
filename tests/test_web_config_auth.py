@@ -160,5 +160,40 @@ class TestCSRF(unittest.TestCase):
             self.assertNotEqual(resp.status_code, 400)
 
 
+class TestMqttAuth(unittest.TestCase):
+    """Regression: the web UI's MQTT publishes (refresh button, config_reload
+    ping) must decrypt a vault-encrypted MQTT_PASSWORD before handing it to
+    the broker — passing the enc: ciphertext through got 'Not authorized'
+    back from the broker."""
+
+    def test_encrypted_password_is_decrypted(self):
+        import tempfile
+        from unittest.mock import patch
+        from secrets_vault import get_or_create_key, encrypt_value
+        with tempfile.TemporaryDirectory() as td:
+            key_path = os.path.join(td, 'key')
+            encrypted = encrypt_value('broker-pw', get_or_create_key(key_path))
+            with patch.dict(os.environ, {'MQTT_USERNAME': 'u', 'MQTT_PASSWORD': encrypted}), \
+                 patch.object(web_config, 'SECRETS_KEY_PATH', key_path):
+                self.assertEqual(web_config._mqtt_auth(),
+                                 {'username': 'u', 'password': 'broker-pw'})
+
+    def test_plaintext_password_passes_through(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as td:
+            with patch.dict(os.environ, {'MQTT_USERNAME': 'u', 'MQTT_PASSWORD': 'plain-pw'}), \
+                 patch.object(web_config, 'SECRETS_KEY_PATH', os.path.join(td, 'key')):
+                self.assertEqual(web_config._mqtt_auth(),
+                                 {'username': 'u', 'password': 'plain-pw'})
+
+    def test_no_credentials_returns_none(self):
+        from unittest.mock import patch
+        env = {k: v for k, v in os.environ.items()
+               if k not in ('MQTT_USERNAME', 'MQTT_PASSWORD')}
+        with patch.dict(os.environ, env, clear=True):
+            self.assertIsNone(web_config._mqtt_auth())
+
+
 if __name__ == "__main__":
     unittest.main()
