@@ -98,11 +98,21 @@ Edit the four `start`/`end` times to suit your household. See [specifications.md
 
 ## 6. Deploy the main display service
 
+**The unit files in `systemd/` are templates** — they assume user `pi` and the repo at `/home/pi/home-eink-display`. If your username or clone path differ, fix them up as you copy (a service pointing at a nonexistent user fails with `status=217/USER`):
+
 ```bash
 sudo cp systemd/bus_display.service /etc/systemd/system/
+
+# Only if your user/path differ from the pi defaults — substitute your own:
+sudo sed -i -e "s/^User=pi/User=$USER/" \
+  -e "s|/home/pi/home-eink-display|$HOME/home-eink-display|g" \
+  /etc/systemd/system/bus_display.service
+
 sudo systemctl daemon-reload
 sudo systemctl enable --now bus_display
 ```
+
+The same applies to `systemd/web_config.service` in step 7 — and any time you re-copy either unit file after a `git pull`, the edit needs re-applying (your deployed copies in `/etc/systemd/system/` are yours; the repo versions stay generic).
 
 Check it's running:
 
