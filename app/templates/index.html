@@ -27,12 +27,12 @@
 <form method="POST" action="{{ url_for('save_config') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% for category, fields in config_schema.items() %}
-    <div class="card">
-        <h2>{{ category }}</h2>
+    <details class="card" {% if category not in collapsed_categories %}open{% endif %}>
+        <summary><h2>{{ category }}</h2></summary>
         {% for field_name, field_config in fields.items() %}
             {{ render_field(field_name, field_config, config) }}
         {% endfor %}
-    </div>
+    </details>
     {% endfor %}
 
     <div class="actions">

@@ -136,10 +136,14 @@ def render_debug(args):
 
 def render_daytime(args):
     from render import common as rc
-    from render.daytime_screen import display_daytime_screen
+    from render.daytime_screen import display_daytime_screen, build_daytime_model
 
     mgr = FakeDisplayManager(rc.SCREEN_WIDTH, rc.SCREEN_HEIGHT)
-    display_daytime_screen(mgr)
+    # Fixed timestamp: 11:45 exercises the longest word-clock string family
+    # ("Quarter to twelve"); weather honors --no-weather via build_scenario.
+    _, _, weather_info, _ = build_scenario(args)
+    model = build_daytime_model(datetime(2026, 7, 2, 11, 45), weather_info)
+    display_daytime_screen(mgr, model)
     return mgr
 
 

@@ -3,7 +3,7 @@
 ## What This Is
 A Raspberry Pi e-ink display that shows Singapore bus arrival times, MRT disruption alerts, weather, and journey-time estimates during the day, an overnight sleep screen, and (optionally) a Home Assistant dashboard screenshot. Adapted from [awesomelionel's project](https://github.com/awesomelionel/singapore-bus-timing-edisplay).
 
-**Current version:** v14 (Phases 1–4 of the module-split/scheduler/web-config rewrite, all merged to `main`)
+**Current version:** v15 (daytime word clock, Open-Meteo weather fallback, font chooser, web UI polish — on top of v14's module-split/scheduler/web-config rewrite)
 **Status:** Production, running as two systemd services on a Raspberry Pi Zero W
 
 Setting this up from scratch? See [How-to.md](How-to.md) for the full step-by-step guide. For how the code is structured, why, and exact pixel layout, see [architecture.md](architecture.md), [design.md](design.md), and [screen_layout.md](screen_layout.md) respectively — this file is a quick-orientation doc, not the deep reference.
@@ -39,7 +39,7 @@ home-eink-display/
 │   │   ├── bus_train.py                   # bus_train_screen
 │   │   ├── sleep_screen.py                 # sleep_screen (true overnight screen)
 │   │   ├── ha_screen.py                     # ha_screen (HA dashboard screenshot)
-│   │   ├── daytime_screen.py                 # daytime_screen (placeholder — see todo.md)
+│   │   ├── daytime_screen.py                 # daytime_screen (word clock + date + weather)
 │   │   ├── boot_screen.py                     # Boot connectivity checklist
 │   │   └── debug_screen.py                     # Dev-only env-var dump
 │   ├── web_config.py                    # Flask app: routes only
@@ -51,7 +51,8 @@ home-eink-display/
 │   ├── .env                                   # NOT in git — your real secrets
 │   └── .encryption_key                         # NOT in git — auto-generated, encrypts .env secrets
 ├── lib/waveshare_epd/                     # Waveshare e-ink driver library (only epd7in5b_V2.py used)
-├── pic/                                    # Fonts loaded by PIL at runtime
+├── pic/                                    # Fonts loaded by PIL at runtime; DISPLAY_FONT picks
+│                                           # a family from render/common.py's FONT_REGISTRY
 ├── systemd/
 │   ├── bus_display.service                 # Main display process
 │   ├── web_config.service                    # Web config panel process

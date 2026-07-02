@@ -27,7 +27,7 @@ import paho.mqtt.publish as mqtt_publish
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from scheduler import load_schedule_config, validate_schedule, detect_overlaps
 from secrets_vault import get_or_create_key, encrypt_value
-from web_config_schema import CONFIG_SCHEMA
+from web_config_schema import CONFIG_SCHEMA, COLLAPSED_CATEGORIES
 from web_config_env import read_env_file, build_env_updates, atomic_write_env_file, KNOWN_BAD_SECRET_KEYS
 from web_config_schedule_forms import schedule_from_form, atomic_write_json
 
@@ -161,6 +161,7 @@ def index():
     )
     return render_template(
         'index.html', config=config, config_schema=CONFIG_SCHEMA, last_updated=last_updated,
+        collapsed_categories=COLLAPSED_CATEGORIES,
     )
 
 

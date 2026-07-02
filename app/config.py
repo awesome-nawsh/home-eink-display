@@ -88,6 +88,13 @@ FONT_XLARGE = 32
 FONT_TIMESTAMP = 18  # timestamp, journey-time line, boot "Booted:" text
 FONT_SECTION = 20    # weather header (bold) / train body font size
 FONT_HEADER = 28     # bold section title font size: bus/train headers, DEBUG MODE
+FONT_CLOCK = 64      # daytime_screen word clock ("Quarter past eleven" must fit 800px)
+
+# Display typeface — a friendly name from render/common.py's FONT_REGISTRY
+# ('Atkinson Regular'/'Atkinson Medium'/'Atkinson SemiBold'/'Inter'/
+# 'IBM Plex Sans'/'Noto Sans'). Unknown names fall back to Atkinson Regular
+# with a logged warning. Restart-required, like most .env values.
+DISPLAY_FONT = os.getenv('DISPLAY_FONT', 'Atkinson Regular')
 
 # Header layout (shared by the boot screen, main view, and debug screen)
 HEADER_ICON_X = 15
@@ -234,6 +241,26 @@ INTERNET_CHECK_URL = os.getenv('INTERNET_CHECK_URL', 'https://www.google.com/gen
 HOME_ASSISTANT_API_URL = os.getenv('HOME_ASSISTANT_API_URL')
 HOME_ASSISTANT_TOKEN = decrypt_value(os.getenv('HOME_ASSISTANT_TOKEN'), _secrets_key)
 HOME_ASSISTANT_WEATHER_ENTITY = os.getenv('HOME_ASSISTANT_WEATHER_ENTITY', 'weather.home')
+
+
+def _parse_lat_lon(lat_raw, lon_raw):
+    """Both must be set and parse as floats, else (None, None) — a half-set
+    or garbled pair silently falling back to bus-stop coordinates is better
+    than crashing config import."""
+    try:
+        return float(lat_raw), float(lon_raw)
+    except (TypeError, ValueError):
+        if lat_raw or lon_raw:
+            logging.warning(
+                f"WEATHER_LAT/WEATHER_LON not a valid pair ({lat_raw!r}, {lon_raw!r}) - "
+                "falling back to bus stop coordinates for the weather location"
+            )
+        return None, None
+
+
+# Optional explicit location for the Open-Meteo weather fallback; when unset,
+# the bus stop's own coordinates (already fetched for journey times) are used.
+WEATHER_LAT, WEATHER_LON = _parse_lat_lon(os.getenv('WEATHER_LAT'), os.getenv('WEATHER_LON'))
 # HOME_ASSISTANT_DASHBOARD_URL is the ha_screen image source (renamed from
 # "sleep screen" now that it's shown per its own schedule entry, not tied to
 # WAKE_HOUR/SLEEP_HOUR). HOME_ASSISTANT_SLEEP_URL is read as a fallback so

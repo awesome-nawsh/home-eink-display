@@ -1,5 +1,13 @@
 # Changelog - Bus Arrival Display
 
+## [V15] - Daytime word clock, weather fallback, font chooser, web UI polish
+
+- **Real `daytime_screen` content** (was a "Day time screen" placeholder): a word clock ("Quarter past two"), the date, and current weather. Deliberately quarter-hour-granular — a full e-ink refresh is slow and flashes the panel, so it redraws only when the quarter-hour bucket or the weather changes: 4 refreshes/hour, aligned to :00/:15/:30/:45 (each lands within one ~30s loop tick of the boundary). The pure model half (`build_daytime_model()`/`time_in_words()`) is unit-tested; `tools/preview_render.py --screen daytime` previews it.
+- **Open-Meteo weather fallback** (free, no API key): weather no longer silently disappears when Home Assistant is unconfigured or down. New `get_weather()` chains HA → Open-Meteo → stale cache behind the same single cache key and backoff (a failure is recorded only when *both* sources fail). Location comes from new optional `WEATHER_LAT`/`WEATHER_LON`, else the bus stop's own coordinates. A pure WMO-code→condition mapping keeps both sources speaking HA's condition vocabulary.
+- **Font chooser**: `DISPLAY_FONT` in `.env` (or the web panel's new "Display & Fonts" section) picks the display typeface from `render/common.py`'s `FONT_REGISTRY` — three Atkinson weight pairings plus newly bundled OFL statics of **Inter**, **IBM Plex Sans**, and **Noto Sans** (each in `pic/<family>/` with its `OFL.txt`). Unknown names/missing files fall back to Atkinson Regular with a warning. Restart-required, like most `.env` values. The MDI icon font is untouched.
+- **Web UI polish**: Settings categories reordered by how often they're actually touched — day-to-day knobs first, and a new **Advanced** card (LTA API URLs, boot-check knobs) that renders collapsed by default. All cards are now collapsible (`<details>`/`<summary>`, no JS). Fixed the `FORCE_SCREEN` dropdown showing two blank options ("-- Select --" and "(none)").
+- New tests: `test_weather.py`, `test_daytime_model.py`, `test_fonts.py`, `test_web_config_schema.py` (120 total).
+
 ## [V14] - Rewrite in progress (branch `v14-rewrite`)
 
 ### Post-Phase-4 review pass (branch `v14-review-fixes`)
