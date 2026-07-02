@@ -101,7 +101,7 @@ def display_daytime_screen(display_mgr, model):
         # bus_train's weather section), centered as one group.
         segments = []
         if weather.get('humidity') is not None:
-            segments.append((MDI.WATER_PERCENT, f"{weather['humidity']}%"))
+            segments.append((MDI.WATER_PERCENT, f"Humidity {weather['humidity']}%"))
         if weather.get('aqi') is not None:
             reading = f"{weather.get('aqi_label', 'AQI')} {weather['aqi']}"
             if weather.get('aqi_category'):
