@@ -1,5 +1,9 @@
 # Changelog - Bus Arrival Display
 
+## [V15.1] - Web panel status bar shows its own uptime
+
+- The status bar's "Web Panel" cell now shows how long `web_config.py` itself has been running, alongside the existing "Display Service" cell for `bus_display`. `/api/status` gained a `web_config` key (`uptime_seconds`/`uptime_formatted`) computed from a module-level start timestamp recorded at import — no shared file needed, since the process serving the request *is* the thing being reported on. New test: 138 total.
+
 ## [V15] - Daytime word clock, weather fallback, font chooser, web UI polish
 
 - **Real `daytime_screen` content** (was a "Day time screen" placeholder): a word clock ("Quarter past two"), the date, and current weather. Deliberately quarter-hour-granular — a full e-ink refresh is slow and flashes the panel, so it redraws only when the quarter-hour bucket or the weather changes: 4 refreshes/hour, aligned to :00/:15/:30/:45 (each lands within one ~30s loop tick of the boundary). The pure model half (`build_daytime_model()`/`time_in_words()`) is unit-tested; `tools/preview_render.py --screen daytime` previews it.

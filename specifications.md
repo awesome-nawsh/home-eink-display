@@ -58,7 +58,7 @@ A Raspberry Pi Zero W drives a Waveshare 7.5" black/white/red e-ink display moun
 ### 3.5 Reliability / self-recovery
 - Hang detection is systemd's watchdog: the unit runs with `Type=notify` + `WatchdogSec=900`, and the main loop pings `sd_notify('WATCHDOG=1')` every tick. If the pings stop (hung loop, wedged network/GPIO call), systemd kills and restarts the process — the app does not attempt in-process recovery.
 - During an LTA API outage, bus/train sections keep showing last-known-good data for up to `STALE_DATA_MAX_AGE` (default 600s), then switch to an explicit "data unavailable" error for that section. A successful-but-empty API response (no buses running) is not an error and renders blank. Weather serves stale data indefinitely (it ages gracefully).
-- The display process writes a per-tick health snapshot (uptime, active screen, day-type, MQTT state, API counters) to `STATUS_FILE_PATH` (default `/tmp/bus_display_status.json`); the web panel's status bar reads it via `/api/status`.
+- The display process writes a per-tick health snapshot (uptime, active screen, day-type, MQTT state, API counters) to `STATUS_FILE_PATH` (default `/tmp/bus_display_status.json`); the web panel's status bar reads it via `/api/status`. That same endpoint also reports the web panel's own uptime (`web_config` key, computed directly from its own process start time — no file involved, since it's the process serving the request).
 - `SIGINT`/`SIGTERM` and normal exit both run a cleanup path: disconnect MQTT, close the HTTP session, log final stats, and release GPIO pins via the Waveshare driver's `module_exit(cleanup=True)`.
 
 ## 4. Non-Functional Requirements

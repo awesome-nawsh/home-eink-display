@@ -2,42 +2,52 @@ function csrfToken() {
     return document.querySelector('meta[name="csrf-token"]').content;
 }
 
-// Populate the "Display Service" status cell from /api/status. main.py
-// rewrites its status file every loop tick (30s awake, 300s asleep), so a
-// report older than ~11 minutes means the display service is down or hung.
-function loadDisplayStatus() {
-    const el = document.getElementById('display-status');
-    if (!el) return;
+// Populate the "Display Service" and "Web Panel" status cells from one
+// /api/status fetch. main.py rewrites its status file every loop tick (30s
+// awake, 300s asleep), so a report older than ~11 minutes means the display
+// service is down or hung. The web panel has no such file — if this request
+// got a response at all, the panel that served it is up — so its cell is
+// just its own uptime, no staleness check needed.
+function loadStatusBar() {
+    const displayEl = document.getElementById('display-status');
+    const webConfigEl = document.getElementById('web-config-status');
+    if (!displayEl && !webConfigEl) return;
     fetch('/api/status')
         .then(response => response.json())
         .then(data => {
-            const d = data.display;
-            if (!d || !d.written_at) {
-                el.textContent = 'No status reported yet';
-                el.style.color = '#f59e0b';
-                return;
+            if (displayEl) {
+                const d = data.display;
+                if (!d || !d.written_at) {
+                    displayEl.textContent = 'No status reported yet';
+                    displayEl.style.color = '#f59e0b';
+                } else {
+                    const ageSeconds = (Date.now() - new Date(d.written_at).getTime()) / 1000;
+                    if (ageSeconds > 660) {
+                        displayEl.textContent = '✗ Stale — service down?';
+                        displayEl.style.color = '#ef4444';
+                    } else {
+                        let text = '✓ Up ' + d.uptime_formatted;
+                        if (d.active_screen) text += ' — ' + d.active_screen;
+                        displayEl.textContent = text;
+                        displayEl.title = 'MQTT ' + (d.mqtt_connected ? 'connected' : 'not connected')
+                            + (d.day_type ? ' · day type: ' + d.day_type : '')
+                            + ' · ' + d.metrics.display_updates + ' display updates';
+                        displayEl.style.color = '#10b981';
+                    }
+                }
             }
-            const ageSeconds = (Date.now() - new Date(d.written_at).getTime()) / 1000;
-            if (ageSeconds > 660) {
-                el.textContent = '✗ Stale — service down?';
-                el.style.color = '#ef4444';
-                return;
+            if (webConfigEl) {
+                webConfigEl.textContent = '✓ Up ' + data.web_config.uptime_formatted;
+                webConfigEl.style.color = '#10b981';
             }
-            let text = '✓ Up ' + d.uptime_formatted;
-            if (d.active_screen) text += ' — ' + d.active_screen;
-            el.textContent = text;
-            el.title = 'MQTT ' + (d.mqtt_connected ? 'connected' : 'not connected')
-                + (d.day_type ? ' · day type: ' + d.day_type : '')
-                + ' · ' + d.metrics.display_updates + ' display updates';
-            el.style.color = '#10b981';
         })
         .catch(() => {
-            el.textContent = 'Status unavailable';
-            el.style.color = '#f59e0b';
+            if (displayEl) { displayEl.textContent = 'Status unavailable'; displayEl.style.color = '#f59e0b'; }
+            if (webConfigEl) { webConfigEl.textContent = 'Status unavailable'; webConfigEl.style.color = '#f59e0b'; }
         });
 }
 
-document.addEventListener('DOMContentLoaded', loadDisplayStatus);
+document.addEventListener('DOMContentLoaded', loadStatusBar);
 
 // Live font-sample preview: any select with a "<name>-sample" image below it
 // (rendered by the font_sample flag in CONFIG_SCHEMA) re-fetches the
