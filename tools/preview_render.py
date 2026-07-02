@@ -88,6 +88,9 @@ def build_scenario(args):
         'temperature': 29,
         'condition': 'partlycloudy',
         'humidity': 68,
+        'aqi': 57,
+        'aqi_label': 'AQI',
+        'aqi_category': 'Moderate',
     }
 
     journey_times = {}

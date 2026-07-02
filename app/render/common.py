@@ -113,6 +113,7 @@ class MDI:
     WEATHER_NIGHT = "\U000F0594"
     THERMOMETER = "\U000F0E02"
     WATER_PERCENT = "\U000F058E"
+    LEAF = "\U000F032A"                     # air quality (PSI) marker
     # Journey/navigation icons
     MAP_MARKER_DISTANCE = "\U000F08F0"
     TIMER = "\U000F13B3"

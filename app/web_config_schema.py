@@ -42,6 +42,9 @@ CONFIG_SCHEMA = {
                         'note': 'Used by the Open-Meteo fallback when Home Assistant weather is unavailable. Leave blank to use the bus stop’s own coordinates.'},
         'WEATHER_LON': {'type': 'text', 'label': 'Weather Longitude (optional)', 'required': False, 'placeholder': '103.8198'},
         'WEATHER_CACHE_DURATION': {'type': 'number', 'label': 'Weather Cache Duration (seconds)', 'required': False, 'default': '1800'},
+        'HOME_ASSISTANT_AQI_ENTITY': {'type': 'text', 'label': 'HA Air Quality Entity (optional)', 'required': False, 'default': 'sensor.aqi_hourly_average',
+                                       'note': 'Air quality shown next to the weather. Falls back to NEA’s public 24h PSI (worst region) when this sensor is unavailable; clear it to always use the PSI.'},
+        'HOME_ASSISTANT_AQI_CATEGORY_ENTITY': {'type': 'text', 'label': 'HA Air Quality Category Entity (optional)', 'required': False, 'default': 'sensor.aqi_category'},
     },
     'Journey Time Settings': {
         'SHOW_JOURNEY_TIME': {'type': 'checkbox', 'label': 'Enable Journey Time Tracking', 'required': False},

@@ -261,6 +261,12 @@ def _parse_lat_lon(lat_raw, lon_raw):
 # Optional explicit location for the Open-Meteo weather fallback; when unset,
 # the bus stop's own coordinates (already fetched for journey times) are used.
 WEATHER_LAT, WEATHER_LON = _parse_lat_lon(os.getenv('WEATHER_LAT'), os.getenv('WEATHER_LON'))
+
+# Air quality: HA sensors first (hourly AQI value + optional category), then
+# NEA's public 24h PSI as the no-HA fallback. Set the AQI entity to empty to
+# skip straight to the PSI.
+HOME_ASSISTANT_AQI_ENTITY = os.getenv('HOME_ASSISTANT_AQI_ENTITY', 'sensor.aqi_hourly_average')
+HOME_ASSISTANT_AQI_CATEGORY_ENTITY = os.getenv('HOME_ASSISTANT_AQI_CATEGORY_ENTITY', 'sensor.aqi_category')
 # HOME_ASSISTANT_DASHBOARD_URL is the ha_screen image source (renamed from
 # "sleep screen" now that it's shown per its own schedule entry, not tied to
 # WAKE_HOUR/SLEEP_HOUR). HOME_ASSISTANT_SLEEP_URL is read as a fallback so

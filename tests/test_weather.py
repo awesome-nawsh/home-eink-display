@@ -14,6 +14,7 @@ HA_WEATHER = {'temperature': 30.1, 'condition': 'partlycloudy',
               'humidity': 75, 'wind_speed': 11.2, 'forecast': []}
 OM_WEATHER = {'temperature': 29.5, 'condition': 'rainy',
               'humidity': 80, 'wind_speed': 9.0, 'forecast': []}
+AIR_QUALITY = {'aqi': 57, 'aqi_label': 'AQI', 'aqi_category': 'Moderate'}
 
 
 class TestWmoMapping(unittest.TestCase):
@@ -45,20 +46,25 @@ class TestWmoMapping(unittest.TestCase):
 class TestGetWeatherSourceOrdering(unittest.TestCase):
     def setUp(self):
         # Fresh cache/backoff singletons so tests don't see each other's
-        # (or a real run's) state.
+        # (or a real run's) state; PSI fetch stubbed out so no test ever
+        # touches the network.
         fetchers.cache = fetchers.DataCache()
         fetchers.backoff_manager = fetchers.BackoffManager()
+        aq_patcher = patch.object(fetchers, '_fetch_air_quality',
+                                  return_value=dict(AIR_QUALITY))
+        aq_patcher.start()
+        self.addCleanup(aq_patcher.stop)
 
     def test_ha_success_wins_and_skips_openmeteo(self):
-        with patch.object(fetchers, '_fetch_weather_ha', return_value=HA_WEATHER), \
+        with patch.object(fetchers, '_fetch_weather_ha', return_value=dict(HA_WEATHER)), \
              patch.object(fetchers, '_fetch_weather_openmeteo') as om:
-            self.assertEqual(get_weather(force_refresh=True), HA_WEATHER)
+            self.assertEqual(get_weather(force_refresh=True), dict(HA_WEATHER, **AIR_QUALITY))
             om.assert_not_called()
 
     def test_ha_none_falls_back_to_openmeteo(self):
         with patch.object(fetchers, '_fetch_weather_ha', return_value=None), \
-             patch.object(fetchers, '_fetch_weather_openmeteo', return_value=OM_WEATHER):
-            self.assertEqual(get_weather(force_refresh=True), OM_WEATHER)
+             patch.object(fetchers, '_fetch_weather_openmeteo', return_value=dict(OM_WEATHER)):
+            self.assertEqual(get_weather(force_refresh=True), dict(OM_WEATHER, **AIR_QUALITY))
 
     def test_both_fail_returns_none_when_no_cache(self):
         with patch.object(fetchers, '_fetch_weather_ha', return_value=None), \
@@ -89,10 +95,30 @@ class TestGetWeatherSourceOrdering(unittest.TestCase):
         with patch.object(fetchers, '_fetch_weather_ha', return_value=None), \
              patch.object(fetchers, '_fetch_weather_openmeteo', return_value=None):
             get_weather(force_refresh=True)
-        with patch.object(fetchers, '_fetch_weather_ha', return_value=HA_WEATHER), \
+        with patch.object(fetchers, '_fetch_weather_ha', return_value=dict(HA_WEATHER)), \
              patch.object(fetchers, '_fetch_weather_openmeteo'):
-            self.assertEqual(get_weather(force_refresh=True), HA_WEATHER)
+            self.assertEqual(get_weather(force_refresh=True), dict(HA_WEATHER, **AIR_QUALITY))
         self.assertTrue(fetchers.backoff_manager.should_retry('weather_data'))
+
+
+class TestAirQualitySourceOrdering(unittest.TestCase):
+    def test_ha_sensor_wins_and_skips_psi(self):
+        ha = {'aqi': 42, 'aqi_label': 'AQI', 'aqi_category': 'Good'}
+        with patch.object(fetchers, '_fetch_aqi_ha', return_value=ha), \
+             patch.object(fetchers, '_fetch_psi') as psi:
+            self.assertEqual(fetchers._fetch_air_quality(), ha)
+            psi.assert_not_called()
+
+    def test_ha_none_falls_back_to_psi(self):
+        with patch.object(fetchers, '_fetch_aqi_ha', return_value=None), \
+             patch.object(fetchers, '_fetch_psi', return_value=61):
+            self.assertEqual(fetchers._fetch_air_quality(),
+                             {'aqi': 61, 'aqi_label': 'PSI', 'aqi_category': None})
+
+    def test_both_fail_returns_none(self):
+        with patch.object(fetchers, '_fetch_aqi_ha', return_value=None), \
+             patch.object(fetchers, '_fetch_psi', return_value=None):
+            self.assertIsNone(fetchers._fetch_air_quality())
 
 
 if __name__ == "__main__":

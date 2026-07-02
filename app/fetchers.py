@@ -636,6 +636,71 @@ def _fetch_weather_openmeteo():
         return None
 
 
+def _fetch_aqi_ha():
+    """Raw Home Assistant air-quality fetch: the hourly AQI value plus (best
+    effort) its category ("Good"/"Moderate"/...). Returns
+    {'aqi', 'aqi_label', 'aqi_category'} or None. No caching (get_weather()
+    owns that, since air quality rides along inside the weather dict)."""
+    if not HOME_ASSISTANT_API_URL or not HOME_ASSISTANT_TOKEN or not HOME_ASSISTANT_AQI_ENTITY:
+        return None
+
+    headers = {
+        'Authorization': f'Bearer {HOME_ASSISTANT_TOKEN}',
+        'Content-Type': 'application/json'
+    }
+
+    def fetch_state(entity_id):
+        url = f"{HOME_ASSISTANT_API_URL}/api/states/{entity_id}"
+        response = http_session.get(url, headers=headers, timeout=HTTP_TIMEOUT_DEFAULT)
+        response.raise_for_status()
+        return response.json()['state']
+
+    try:
+        aqi = round(float(fetch_state(HOME_ASSISTANT_AQI_ENTITY)))
+    except (requests.RequestException, KeyError, ValueError) as e:
+        logging.warning(f"Error fetching AQI from Home Assistant: {e}")
+        return None
+
+    category = None
+    if HOME_ASSISTANT_AQI_CATEGORY_ENTITY:
+        try:
+            state = fetch_state(HOME_ASSISTANT_AQI_CATEGORY_ENTITY)
+            if state not in ('unknown', 'unavailable', ''):
+                category = state
+        except (requests.RequestException, KeyError) as e:
+            logging.warning(f"Error fetching AQI category from Home Assistant: {e}")
+
+    return {'aqi': aqi, 'aqi_label': 'AQI', 'aqi_category': category}
+
+
+def _fetch_psi():
+    """Raw NEA 24-hour PSI fetch (data.gov.sg, free, no API key). Returns the
+    WORST of the five regional readings — the conservative number for "should
+    we play outside" — or None."""
+    try:
+        response = http_session.get('https://api.data.gov.sg/v1/environment/psi',
+                                    timeout=HTTP_TIMEOUT_DEFAULT)
+        response.raise_for_status()
+        readings = response.json()['items'][0]['readings']['psi_twenty_four_hourly']
+        return max(readings.values()) if readings else None
+    except (requests.RequestException, KeyError, IndexError, ValueError) as e:
+        logging.warning(f"Error fetching PSI from NEA: {e}")
+        return None
+
+
+def _fetch_air_quality():
+    """Air quality with the same two-source shape as weather: the user's own
+    Home Assistant AQI sensors first, then NEA's public PSI. Returns
+    {'aqi', 'aqi_label', 'aqi_category'} or None."""
+    ha = _fetch_aqi_ha()
+    if ha is not None:
+        return ha
+    psi = _fetch_psi()
+    if psi is not None:
+        return {'aqi': psi, 'aqi_label': 'PSI', 'aqi_category': None}
+    return None
+
+
 def get_weather(force_refresh=False):
     """Weather with caching, backoff, and a two-source chain: Home Assistant
     first (skipped when unconfigured), then Open-Meteo. A backoff failure is
@@ -665,6 +730,10 @@ def get_weather(force_refresh=False):
         source = 'Open-Meteo'
 
     if weather is not None:
+        # Air quality rides along in the weather dict (cached and refreshed
+        # together) — an air-quality fetch failure just means no reading
+        # shown, never a weather failure.
+        weather.update(_fetch_air_quality() or {})
         cache.set(cache_key, weather)
         backoff_manager.reset(cache_key)
         system_health.record_api_call('weather', success=True)
