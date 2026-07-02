@@ -127,6 +127,22 @@ Upgrading an existing deployment's `.env` from an older phase? Run `python3 tool
 
 ---
 
+## Release Workflow
+
+**Every merge to `main` gets a release — no batching, no skipping.** After merging a PR (any size, fix or feature):
+
+1. Add/extend a `ChangeLog.md` entry for it (new `## [VX]` section for a themed batch of work like v15's four features; append a bullet to the current version's section for a single follow-up fix/feature, matching how the v15 entry absorbed later PRs).
+2. Tag and release immediately — don't wait to batch multiple merges into one release:
+   ```bash
+   git tag -a v15.1 -m "V15.1: <short summary>"
+   git push origin v15.1
+   gh release create v15.1 --title "V15.1 — <short summary>" --notes-file notes.md
+   ```
+3. Version scheme: `vX.Y` — `Y` bumps for individual PRs (fixes, small features, one-off additions); `X` bumps only for the next big themed batch of work (the kind that gets its own multi-step plan, like v14's rewrite or v15's four bundled features). Start each new `X` at `.0` isn't used — the first release of a themed batch is just `vX` (e.g. `v15`), then follow-ups are `vX.1`, `vX.2`, etc.
+4. Release notes: pull straight from the `ChangeLog.md` entry via `--notes-file` (cut the relevant section to a temp file first) — never write notes from scratch, so the changelog and the GitHub release never drift apart.
+
+---
+
 ## Service Management (on Pi)
 
 ```bash
