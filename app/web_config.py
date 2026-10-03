@@ -214,18 +214,32 @@ def logout():
     return redirect(url_for('index'))
 
 
-def _mqtt_auth():
-    """Broker auth dict for the publish helpers below, or None when no
+def _mqtt_auth(env):
+    """Broker auth dict from `env` (a read_env_file() dict), or None when no
     credentials are configured. MQTT_PASSWORD in .env may be vault-encrypted
     (enc: prefix, saved that way by this very UI) — decrypt it the same way
     config.py does for the main process; decrypt_value() passes plaintext
     values through unchanged."""
-    username = os.getenv('MQTT_USERNAME')
-    password = os.getenv('MQTT_PASSWORD')
+    username = env.get('MQTT_USERNAME')
+    password = env.get('MQTT_PASSWORD')
     if not (username and password):
         return None
     return {'username': username,
             'password': decrypt_value(password, get_or_create_key(SECRETS_KEY_PATH))}
+
+
+def _mqtt_publish(topic_var, default_topic, payload):
+    """Publish one message using the MQTT settings currently in .env — read
+    fresh on every call rather than from this process's startup environment,
+    so broker/credential changes saved through this very UI apply without
+    also restarting web_config (/api/restart only restarts bus_display)."""
+    env = read_env_file(ENV_FILE)
+    mqtt_publish.single(
+        env.get(topic_var) or default_topic, payload,
+        hostname=env.get('MQTT_BROKER') or 'localhost',
+        port=int(env.get('MQTT_PORT') or '1883'),
+        auth=_mqtt_auth(env),
+    )
 
 
 def publish_config_reload():
@@ -234,11 +248,7 @@ def publish_config_reload():
     than waiting for its mtime-poll backstop. Never raises — a failed
     publish just means that backstop picks the change up a bit later instead."""
     try:
-        mqtt_broker = os.getenv('MQTT_BROKER', 'localhost')
-        mqtt_port = int(os.getenv('MQTT_PORT', '1883'))
-        mqtt_topic = os.getenv('MQTT_TOPIC_CONFIG_RELOAD', 'eink/display/config_reload')
-
-        mqtt_publish.single(mqtt_topic, 'reload', hostname=mqtt_broker, port=mqtt_port, auth=_mqtt_auth())
+        _mqtt_publish('MQTT_TOPIC_CONFIG_RELOAD', 'eink/display/config_reload', 'reload')
     except Exception as e:
         logging.warning(f"Could not publish config_reload via MQTT: {e}")
 
@@ -326,11 +336,7 @@ def save_schedule():
 def api_refresh():
     """Trigger an immediate data refresh via MQTT (no service restart)."""
     try:
-        mqtt_broker = os.getenv('MQTT_BROKER', 'localhost')
-        mqtt_port = int(os.getenv('MQTT_PORT', '1883'))
-        mqtt_topic = os.getenv('MQTT_TOPIC_REFRESH', 'eink/display/refresh')
-
-        mqtt_publish.single(mqtt_topic, 'refresh', hostname=mqtt_broker, port=mqtt_port, auth=_mqtt_auth())
+        _mqtt_publish('MQTT_TOPIC_REFRESH', 'eink/display/refresh', 'refresh')
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
