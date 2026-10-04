@@ -78,7 +78,7 @@ class MQTTClient:
         """Callback when disconnected from MQTT broker."""
         self.connected = False
         if reason_code != 0:
-            logging.warning(f"Unexpected MQTT disconnection. Will auto-reconnect.")
+            logging.warning("Unexpected MQTT disconnection. Will auto-reconnect.")
 
     def publish_status(self, status):
         """Publish current status to MQTT."""

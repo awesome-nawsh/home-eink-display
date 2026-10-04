@@ -11,7 +11,17 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from config import *
+from config import (
+    API_BUS_STOP_INFO_URL, API_KEY, BUS_API_URL, BUS_SERVICES_TO_TRACK,
+    BUS_STOP_CODE_A, CACHE_DURATION, GOOGLE_MAPS_API_KEY, HOME_ASSISTANT_API_URL,
+    HOME_ASSISTANT_AQI_CATEGORY_ENTITY, HOME_ASSISTANT_AQI_ENTITY,
+    HOME_ASSISTANT_SCHOOL_DAY_ENTITY, HOME_ASSISTANT_TOKEN,
+    HOME_ASSISTANT_WEATHER_ENTITY, HOME_ASSISTANT_WORKDAY_ENTITY,
+    HTTP_TIMEOUT_DEFAULT, HTTP_TIMEOUT_LONG, JOURNEY_DESTINATION,
+    JOURNEY_TIME_CACHE_DURATION, ONEMAP_API_KEY, ROUTING_API_PROVIDER,
+    SHOW_JOURNEY_TIME, STALE_DATA_MAX_AGE, TRAIN_API_URL, WEATHER_CACHE_DURATION,
+    WEATHER_LAT, WEATHER_LON,
+)
 from health import system_health
 
 # ============================================================================
@@ -46,6 +56,23 @@ def _lta_base_url(url):
     the fetchers now pass it via `params=`, so strip it here and both forms
     keep working."""
     return url.split('?', 1)[0]
+
+
+def _lta_headers():
+    return {'AccountKey': API_KEY, 'accept': 'application/json'}
+
+
+def _ha_headers():
+    return {'Authorization': f'Bearer {HOME_ASSISTANT_TOKEN}', 'Content-Type': 'application/json'}
+
+
+def _ha_state(entity_id):
+    """Raw Home Assistant entity fetch: the full state object. Raises on
+    HTTP/parse failure — callers own the error handling."""
+    url = f"{HOME_ASSISTANT_API_URL}/api/states/{entity_id}"
+    response = http_session.get(url, headers=_ha_headers(), timeout=HTTP_TIMEOUT_DEFAULT)
+    response.raise_for_status()
+    return response.json()
 
 # ============================================================================
 # API FUNCTIONS WITH CACHING
@@ -184,14 +211,9 @@ def get_bus_arrival(bus_stop_code, force_refresh=False):
 
     logging.debug(f"Fetching bus info for stop {bus_stop_code}")
 
-    headers = {
-        'AccountKey': API_KEY,
-        'accept': 'application/json'
-    }
-
     try:
         response = http_session.get(_lta_base_url(BUS_API_URL), params={'BusStopCode': bus_stop_code},
-                                    headers=headers, timeout=HTTP_TIMEOUT_DEFAULT)
+                                    headers=_lta_headers(), timeout=HTTP_TIMEOUT_DEFAULT)
         response.raise_for_status()
         data = response.json()
 
@@ -250,18 +272,13 @@ def get_bus_stop_coordinates(bus_stop_code):
     if bus_stop_code in _bus_stop_coordinates_memo:
         return _bus_stop_coordinates_memo[bus_stop_code]
 
-    headers = {
-        'AccountKey': API_KEY,
-        'accept': 'application/json'
-    }
-
     try:
         for page in range(_BUS_STOPS_MAX_PAGES):
             params = {'BusStopCode': bus_stop_code}
             if page:
                 params['$skip'] = page * _BUS_STOPS_PAGE_SIZE
             response = http_session.get(_lta_base_url(API_BUS_STOP_INFO_URL), params=params,
-                                        headers=headers, timeout=HTTP_TIMEOUT_LONG)
+                                        headers=_lta_headers(), timeout=HTTP_TIMEOUT_LONG)
             response.raise_for_status()
             stops = response.json().get('value') or []
 
@@ -283,6 +300,33 @@ def get_bus_stop_coordinates(bus_stop_code):
     _bus_stop_coordinates_memo[bus_stop_code] = None
     return None
 
+# Success-only memo of OneMap geocodes: the destination text never changes
+# at runtime, so one lookup per process is enough — but a failed lookup is
+# retried next time rather than memoized.
+_onemap_geocode_memo = {}
+
+
+def _onemap_geocode(destination):
+    """(lat, lon) for a destination address via OneMap search, or None if
+    not found. Raises on HTTP/parse failure."""
+    if destination in _onemap_geocode_memo:
+        return _onemap_geocode_memo[destination]
+
+    response = http_session.get(
+        "https://www.onemap.gov.sg/api/common/elastic/search",
+        params={'searchVal': destination, 'returnGeom': 'Y', 'getAddrDetails': 'Y'},
+        timeout=HTTP_TIMEOUT_DEFAULT,
+    )
+    response.raise_for_status()
+    results = response.json().get('results')
+    if not results:
+        return None
+
+    coords = (float(results[0]['LATITUDE']), float(results[0]['LONGITUDE']))
+    _onemap_geocode_memo[destination] = coords
+    return coords
+
+
 def calculate_journey_time_onemap(origin_lat, origin_lon, destination, departure_time):
     """
     Calculate journey time using OneMap Routing API.
@@ -297,28 +341,12 @@ def calculate_journey_time_onemap(origin_lat, origin_lon, destination, departure
         dict with 'duration_mins' and 'arrival_time' or None
     """
     try:
-        # First, geocode the destination address
-        search_url = "https://www.onemap.gov.sg/api/common/elastic/search"
-        search_params = {
-            'searchVal': destination,
-            'returnGeom': 'Y',
-            'getAddrDetails': 'Y'
-        }
-
-        # Headers for search (no auth needed for search)
-        search_headers = {}
-
-        response = http_session.get(search_url, params=search_params, headers=search_headers, timeout=HTTP_TIMEOUT_DEFAULT)
-        response.raise_for_status()
-        search_data = response.json()
-
-        if not search_data.get('results'):
+        # First, geocode the destination address (memoized after first success)
+        dest_coords = _onemap_geocode(destination)
+        if not dest_coords:
             logging.error(f"Destination '{destination}' not found in OneMap")
             return None
-
-        # Get first result coordinates
-        dest_lat = float(search_data['results'][0]['LATITUDE'])
-        dest_lon = float(search_data['results'][0]['LONGITUDE'])
+        dest_lat, dest_lon = dest_coords
 
         logging.debug(f"Destination coordinates: {dest_lat}, {dest_lon}")
 
@@ -531,13 +559,8 @@ def get_train_disruptions(force_refresh=False):
     logging.debug("Fetching train disruptions...")
 
     url = TRAIN_API_URL
-    headers = {
-        'AccountKey': API_KEY,
-        'accept': 'application/json'
-    }
-
     try:
-        response = http_session.get(url, headers=headers, timeout=HTTP_TIMEOUT_DEFAULT)
+        response = http_session.get(url, headers=_lta_headers(), timeout=HTTP_TIMEOUT_DEFAULT)
         response.raise_for_status()
         data = response.json()
 
@@ -557,10 +580,9 @@ def get_train_disruptions(force_refresh=False):
             if data['value'].get('Message'):
                 content = data['value']['Message'][0].get('Content', '')
 
-        result = "No Disruptions Today!" if not disruptions and not content else {
-            'disruptions': disruptions,
-            'content': content
-        }
+        # Always this shape — empty disruptions and content is the real,
+        # good "all clear" answer (render.bus_train checks for that).
+        result = {'disruptions': disruptions, 'content': content}
 
         cache.set(cache_key, result)
         backoff_manager.reset(cache_key)
@@ -602,16 +624,8 @@ def _fetch_weather_ha():
         logging.debug("Home Assistant API URL or token not configured")
         return None
 
-    url = f"{HOME_ASSISTANT_API_URL}/api/states/{HOME_ASSISTANT_WEATHER_ENTITY}"
-    headers = {
-        'Authorization': f'Bearer {HOME_ASSISTANT_TOKEN}',
-        'Content-Type': 'application/json'
-    }
-
     try:
-        response = http_session.get(url, headers=headers, timeout=HTTP_TIMEOUT_DEFAULT)
-        response.raise_for_status()
-        data = response.json()
+        data = _ha_state(HOME_ASSISTANT_WEATHER_ENTITY)
         return {
             'temperature': data['attributes'].get('temperature'),
             'condition': data['state'],
@@ -673,19 +687,8 @@ def _fetch_aqi_ha():
     if not HOME_ASSISTANT_API_URL or not HOME_ASSISTANT_TOKEN or not HOME_ASSISTANT_AQI_ENTITY:
         return None
 
-    headers = {
-        'Authorization': f'Bearer {HOME_ASSISTANT_TOKEN}',
-        'Content-Type': 'application/json'
-    }
-
-    def fetch_state(entity_id):
-        url = f"{HOME_ASSISTANT_API_URL}/api/states/{entity_id}"
-        response = http_session.get(url, headers=headers, timeout=HTTP_TIMEOUT_DEFAULT)
-        response.raise_for_status()
-        return response.json()['state']
-
     try:
-        aqi = round(float(fetch_state(HOME_ASSISTANT_AQI_ENTITY)))
+        aqi = round(float(_ha_state(HOME_ASSISTANT_AQI_ENTITY)['state']))
     except (requests.RequestException, KeyError, ValueError) as e:
         logging.warning(f"Error fetching AQI from Home Assistant: {e}")
         return None
@@ -693,7 +696,7 @@ def _fetch_aqi_ha():
     category = None
     if HOME_ASSISTANT_AQI_CATEGORY_ENTITY:
         try:
-            state = fetch_state(HOME_ASSISTANT_AQI_CATEGORY_ENTITY)
+            state = _ha_state(HOME_ASSISTANT_AQI_CATEGORY_ENTITY)['state']
             if state not in ('unknown', 'unavailable', ''):
                 category = state
         except (requests.RequestException, KeyError) as e:
@@ -794,20 +797,9 @@ def get_day_type_sensors():
         logging.debug("Home Assistant API URL or token not configured - day-type resolution unavailable")
         return None, None
 
-    headers = {
-        'Authorization': f'Bearer {HOME_ASSISTANT_TOKEN}',
-        'Content-Type': 'application/json'
-    }
-
-    def fetch_state(entity_id):
-        url = f"{HOME_ASSISTANT_API_URL}/api/states/{entity_id}"
-        response = http_session.get(url, headers=headers, timeout=HTTP_TIMEOUT_DEFAULT)
-        response.raise_for_status()
-        return response.json()['state']
-
     try:
-        school_day_state = fetch_state(HOME_ASSISTANT_SCHOOL_DAY_ENTITY)
-        workday_state = fetch_state(HOME_ASSISTANT_WORKDAY_ENTITY)
+        school_day_state = _ha_state(HOME_ASSISTANT_SCHOOL_DAY_ENTITY)['state']
+        workday_state = _ha_state(HOME_ASSISTANT_WORKDAY_ENTITY)['state']
         system_health.record_api_call('day_type', success=True)
         return school_day_state, workday_state
     except (requests.RequestException, *_PARSE_ERRORS) as e:

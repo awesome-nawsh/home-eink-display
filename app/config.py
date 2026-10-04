@@ -1,6 +1,7 @@
 """Environment configuration, layout constants, and startup validation.
 
-Every other module imports from here (typically via ``from config import *``)
+Every other module imports from here (explicit ``from config import (...)``
+lists)
 rather than reading os.getenv() directly, so there is exactly one place that
 owns the process's configuration. Values are loaded once at import time and
 generally require a process restart to pick up changes — except the small
@@ -19,13 +20,14 @@ import logging
 from datetime import datetime
 from dotenv import load_dotenv
 
+import defaults
 from scheduler import SCREEN_NAMES  # FORCE_SCREEN validation below; scheduler.py has
                                      # no imports of its own, so this can't create a cycle.
 from secrets_vault import get_or_create_key, decrypt_value
 
 # Explicit path (rather than load_dotenv()'s implicit cwd-upward search) so
 # reload_dynamic_vars() can re-read the exact same file later.
-ENV_FILE_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), '.env')
+ENV_FILE_PATH = defaults.ENV_FILE_PATH
 load_dotenv(ENV_FILE_PATH)
 
 # Setting up directories
@@ -44,10 +46,7 @@ logging.basicConfig(
 # Secrets-at-rest encryption key. Protects .env values viewed/shared/committed
 # in isolation — NOT a defense against full filesystem access to this device,
 # since the key must live on the same disk to be usable at process start.
-SECRETS_KEY_PATH = os.getenv(
-    'SECRETS_KEY_PATH',
-    os.path.join(os.path.dirname(os.path.realpath(__file__)), '.encryption_key')
-)
+SECRETS_KEY_PATH = os.getenv('SECRETS_KEY_PATH', defaults.SECRETS_KEY_PATH)
 _secrets_key = get_or_create_key(SECRETS_KEY_PATH)
 
 # ============================================================================
@@ -75,8 +74,6 @@ BUS_BOX_Y_SPACING = 105
 BUS_NUMBER_FONT_SIZE = 32
 LOAD_FONT_SIZE = 16
 BOTTOM_FONT_SIZE = 14
-BOTTOM_MARGIN = 35
-TOP_MARGIN = 20
 DIVIDER_WIDTH = 2
 WEATHER_SECTION_HEIGHT = 140  # px reserved at the bottom of the right column for weather
 
@@ -84,7 +81,6 @@ WEATHER_SECTION_HEIGHT = 140  # px reserved at the bottom of the right column fo
 FONT_SMALL = 12
 FONT_MEDIUM = 16
 FONT_LARGE = 24
-FONT_XLARGE = 32
 FONT_TIMESTAMP = 18  # timestamp, journey-time line, boot "Booted:" text
 FONT_SECTION = 20    # weather header (bold) / train body font size
 FONT_HEADER = 28     # bold section title font size: bus/train headers, DEBUG MODE
@@ -174,8 +170,8 @@ JOURNEY_TIME_CACHE_DURATION = int(os.getenv('JOURNEY_TIME_CACHE_DURATION', '1800
 # Legacy wake/sleep hours — no longer read directly by main.py's loop (see
 # scheduler.py), kept only as the migration-fallback input to
 # default_schedule_from_env() when schedule_config.json is absent.
-WAKE_HOUR = int(os.getenv('WAKE_HOUR', '7'))
-SLEEP_HOUR = int(os.getenv('SLEEP_HOUR', '22'))
+WAKE_HOUR = int(os.getenv('WAKE_HOUR', defaults.WAKE_HOUR))
+SLEEP_HOUR = int(os.getenv('SLEEP_HOUR', defaults.SLEEP_HOUR))
 WAKE_INTERVAL = int(os.getenv('WAKE_INTERVAL', '30'))
 SLEEP_INTERVAL = int(os.getenv('SLEEP_INTERVAL', '300'))
 DEBUG_SKIP_TIME_CHECK = os.getenv('DEBUG_SKIP_TIME_CHECK', 'false').lower() == 'true'
@@ -184,10 +180,7 @@ DEBUG_SKIP_TIME_CHECK = os.getenv('DEBUG_SKIP_TIME_CHECK', 'false').lower() == '
 HOME_ASSISTANT_SCHOOL_DAY_ENTITY = os.getenv('HOME_ASSISTANT_SCHOOL_DAY_ENTITY', 'binary_sensor.school_day')
 HOME_ASSISTANT_WORKDAY_ENTITY = os.getenv('HOME_ASSISTANT_WORKDAY_ENTITY', 'binary_sensor.workday_sensor')
 DAY_TYPE_FALLBACK = os.getenv('DAY_TYPE_FALLBACK', 'work_day')
-SCHEDULE_CONFIG_PATH = os.getenv(
-    'SCHEDULE_CONFIG_PATH',
-    os.path.join(os.path.dirname(os.path.realpath(__file__)), 'schedule_config.json')
-)
+SCHEDULE_CONFIG_PATH = os.getenv('SCHEDULE_CONFIG_PATH', defaults.SCHEDULE_CONFIG_PATH)
 
 # Testing override: force a specific screen regardless of schedule/day-type
 # (one of scheduler.SCREEN_NAMES, or unset/empty for normal resolution).
@@ -237,7 +230,7 @@ def reload_dynamic_vars():
 # /api/status to read (separate processes — a small file is the shared
 # channel). Default under /tmp: rewritten every loop tick, so keeping it off
 # the SD card matters more than surviving a reboot.
-STATUS_FILE_PATH = os.getenv('STATUS_FILE_PATH', '/tmp/bus_display_status.json')
+STATUS_FILE_PATH = os.getenv('STATUS_FILE_PATH', defaults.STATUS_FILE_PATH)
 
 # Boot-screen connectivity checklist
 BOOT_CHECK_TIMEOUT = float(os.getenv('BOOT_CHECK_TIMEOUT', '3'))
@@ -302,13 +295,13 @@ HA_SCREEN_THEME = _env_with_legacy('HA_SCREEN_THEME', 'SLEEP_SCREEN_THEME', 'Gra
 
 # MQTT Configuration
 MQTT_ENABLED = os.getenv('MQTT_ENABLED', 'false').lower() == 'true'
-MQTT_BROKER = os.getenv('MQTT_BROKER', 'localhost')
-MQTT_PORT = int(os.getenv('MQTT_PORT', '1883'))
+MQTT_BROKER = os.getenv('MQTT_BROKER', defaults.MQTT_BROKER)
+MQTT_PORT = int(os.getenv('MQTT_PORT', defaults.MQTT_PORT))
 MQTT_USERNAME = os.getenv('MQTT_USERNAME', '')
 MQTT_PASSWORD = decrypt_value(os.getenv('MQTT_PASSWORD', ''), _secrets_key)
-MQTT_TOPIC_REFRESH = os.getenv('MQTT_TOPIC_REFRESH', 'eink/display/refresh')
-MQTT_TOPIC_STATUS = os.getenv('MQTT_TOPIC_STATUS', 'eink/display/status')
-MQTT_TOPIC_CONFIG_RELOAD = os.getenv('MQTT_TOPIC_CONFIG_RELOAD', 'eink/display/config_reload')
+MQTT_TOPIC_REFRESH = os.getenv('MQTT_TOPIC_REFRESH', defaults.MQTT_TOPIC_REFRESH)
+MQTT_TOPIC_STATUS = os.getenv('MQTT_TOPIC_STATUS', defaults.MQTT_TOPIC_STATUS)
+MQTT_TOPIC_CONFIG_RELOAD = os.getenv('MQTT_TOPIC_CONFIG_RELOAD', defaults.MQTT_TOPIC_CONFIG_RELOAD)
 
 # Cache duration
 CACHE_DURATION = int(os.getenv('CACHE_DURATION', '20'))

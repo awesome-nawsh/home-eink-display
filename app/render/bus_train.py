@@ -5,7 +5,24 @@ import logging
 import textwrap
 from datetime import datetime
 
-from config import *
+from config import (
+    ALERT_POST_DIVIDER_GAP, ALERT_SECTION_GAP, BOTTOM_FONT_SIZE, BUS_BOX_HEIGHT,
+    BUS_BOX_TOP_GAP, BUS_BOX_WIDTH, BUS_BOX_Y_OFFSET, BUS_BOX_Y_SPACING,
+    BUS_LOAD_BAR_X1, BUS_LOAD_BAR_X2, BUS_LOAD_ICON_X, BUS_LOAD_MAP_SIZE,
+    BUS_LOAD_MAP_TEXT, BUS_LOAD_TEXT_X, BUS_MORE_LINE_HEIGHT, BUS_NUMBER_FONT_SIZE,
+    BUS_SECTION_BOTTOM, BUS_SECTION_X, BUS_TIMES_X, COLUMN_DIVIDER_TOP_Y,
+    COLUMN_OFFSET, DIVIDER_WIDTH, FONT_HEADER, FONT_LARGE, FONT_MEDIUM,
+    FONT_SECTION, FONT_SMALL, FONT_TIMESTAMP, HEADER_A, HEADER_DIVIDER_Y,
+    HEADER_ICON_SIZE, HEADER_ICON_X, HEADER_ICON_Y, HEADER_TEXT_Y,
+    JOURNEY_DESTINATION, JOURNEY_DESTINATION_SHORT, JOURNEY_HEADER_GAP,
+    JOURNEY_ICON_X, JOURNEY_LINE_HEIGHT, JOURNEY_Y_GAP, LOAD_FONT_SIZE,
+    LOAD_TEXT_Y_NUDGE, SCREEN_HEIGHT, SCREEN_MARGIN, SCREEN_WIDTH,
+    SHOW_JOURNEY_TIME, TEXT_RIGHT_MARGIN, TRAIN_ALERT_LINE_SPACING,
+    TRAIN_COLUMN_INDENT, TRAIN_DISRUPTION_GAP, TRAIN_LINE_SPACING,
+    TRAIN_LINE_SPACING_SMALL, TRAIN_SECTION_Y_OFFSET, TRAIN_STATION_LINE_SPACING,
+    TRAIN_WRAP_WIDTH, WEATHER_HEADER_GAP, WEATHER_POST_DIVIDER_GAP,
+    WEATHER_SECTION_HEIGHT,
+)
 from health import system_health
 from render.common import (
     get_font, get_font_bold, draw_mdi_icon, get_weather_icon,
@@ -233,7 +250,8 @@ def draw_train_section(draw, draw_r, train_info, train_x):
     y_offset = TRAIN_SECTION_Y_OFFSET
 
     # None means the train API is failing (fetchers._stale_or_unavailable) —
-    # distinct from "No Disruptions Today!", which is a real, good answer.
+    # distinct from an empty {'disruptions': [], 'content': ''}, which is a
+    # real, good "all clear" answer.
     if train_info is None:
         draw_mdi_icon(draw_r, train_x, y_offset, MDI.ALERT_CIRCLE, size=24, color=0)
         draw_r.text((train_x + 30, y_offset + 2), "Train status", font=train_font, fill=0)
@@ -244,7 +262,7 @@ def draw_train_section(draw, draw_r, train_info, train_x):
         y_offset += TRAIN_LINE_SPACING
         return y_offset
 
-    if train_info == "No Disruptions Today!":
+    if not train_info['disruptions'] and not train_info['content']:
         draw_mdi_icon(draw_r, train_x, y_offset, MDI.CHECK_CIRCLE, size=24, color=0)
 
         draw.text((train_x + 30, y_offset + 2), "All trains running", font=train_font, fill=0)
@@ -255,7 +273,7 @@ def draw_train_section(draw, draw_r, train_info, train_x):
         y_offset += TRAIN_LINE_SPACING_SMALL
         draw.text((train_x + 30, y_offset), "expected.", font=train_font, fill=0)
         y_offset += TRAIN_LINE_SPACING
-    elif train_info:
+    else:
         for disruption in train_info['disruptions']:
             draw_mdi_icon(draw_r, train_x, y_offset, MDI.ALERT_CIRCLE, size=20, color=0)
 
@@ -320,13 +338,13 @@ def display_combined_view(display_mgr, font, bus_info, train_info, weather_info,
     draw_r.text((80, HEADER_TEXT_Y), HEADER_A, font=bus_header_font, fill=0)
     draw_r.line((SCREEN_MARGIN, HEADER_DIVIDER_Y, COLUMN_OFFSET - SCREEN_MARGIN, HEADER_DIVIDER_Y), fill=0, width=1)
 
-    final_bus_y = draw_bus_section(draw, draw_r, bus_info, font, BUS_BOX_Y_OFFSET, load_font, journey_times)
+    draw_bus_section(draw, draw_r, bus_info, font, BUS_BOX_Y_OFFSET, load_font, journey_times)
 
     # ========== RIGHT COLUMN: TRAIN STATUS AND WEATHER ==========
     train_x = COLUMN_OFFSET + TRAIN_COLUMN_INDENT
 
     # Draw train status
-    final_train_y = draw_train_section(draw, draw_r, train_info, train_x)
+    draw_train_section(draw, draw_r, train_info, train_x)
 
     # Draw weather below train status in right column
     draw_weather_section_right(draw, draw_r, weather_info, train_x)

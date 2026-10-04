@@ -161,10 +161,10 @@ The post-Phase-4 code review fixed the bugs/stale-comments/efficiency items; the
 dead-code removals were reviewed and deliberately left in place (low value, zero
 runtime cost) — tracked here so they aren't re-flagged as new discoveries later:
 
-- [ ] Unused layout constants in `config.py` (`TOP_MARGIN`, `BOTTOM_MARGIN`, `FONT_XLARGE`)
-- [ ] Unused `import json` in `fetchers.py`
-- [ ] Dead locals in `render/bus_train.py` (`final_bus_y`/`final_train_y`, the unused `x`
-      parameter branch in `draw_timestamp`)
+- [x] Unused layout constants in `config.py` (`TOP_MARGIN`, `BOTTOM_MARGIN`, `FONT_XLARGE`)
+- [x] Unused `import json` in `fetchers.py`
+- [x] Dead locals in `render/bus_train.py` (`final_bus_y`/`final_train_y`)
+- [ ] The unused `x` parameter branch in `render/bus_train.py`'s `draw_timestamp`
 - [ ] ~22 unused MDI icon constants in `render/common.py` (kept as a glyph palette)
 - [ ] Dead `.btn-danger` CSS rule in `app/static/style.css`
 - [x] FORCE_SCREEN dropdown renders two empty-value options — fixed in v15

@@ -122,5 +122,63 @@ class TestBusStopCoordinates(FetcherTestCase):
         self.assertNotIn('12345', fetchers._bus_stop_coordinates_memo)
 
 
+class TestTrainDisruptionShape(FetcherTestCase):
+    def test_all_clear_is_empty_dict_not_a_string(self):
+        with patch.object(fetchers.http_session, 'get', return_value=fake_response({"value": {}})):
+            self.assertEqual(fetchers.get_train_disruptions(force_refresh=True),
+                             {'disruptions': [], 'content': ''})
+
+    def test_disruption_parsed(self):
+        payload = {"value": {"AffectedSegments": [{"Line": "NSL", "Direction": "Jurong East",
+                                                   "Stations": "NS1,NS2"}],
+                             "Message": [{"Content": "Bridging buses available"}]}}
+        with patch.object(fetchers.http_session, 'get', return_value=fake_response(payload)):
+            result = fetchers.get_train_disruptions(force_refresh=True)
+        self.assertEqual(result['disruptions'], [{'Line': 'NSL', 'Direction': 'Jurong East',
+                                                   'Stations': ['NS1', 'NS2']}])
+        self.assertEqual(result['content'], 'Bridging buses available')
+
+
+class TestHaHelpers(FetcherTestCase):
+    def test_ha_state_uses_bearer_token(self):
+        with patch.object(fetchers, 'HOME_ASSISTANT_API_URL', 'http://ha'), \
+             patch.object(fetchers, 'HOME_ASSISTANT_TOKEN', 'tok'), \
+             patch.object(fetchers.http_session, 'get',
+                          return_value=fake_response({"state": "on"})) as get:
+            self.assertEqual(fetchers._ha_state('binary_sensor.x'), {"state": "on"})
+        self.assertEqual(get.call_args.args[0], 'http://ha/api/states/binary_sensor.x')
+        self.assertEqual(get.call_args.kwargs['headers']['Authorization'], 'Bearer tok')
+
+    def test_day_type_reads_both_entities(self):
+        states = {'binary_sensor.school_day': 'on', 'binary_sensor.workday_sensor': 'off'}
+        with patch.object(fetchers, 'HOME_ASSISTANT_API_URL', 'http://ha'), \
+             patch.object(fetchers, 'HOME_ASSISTANT_TOKEN', 't'), \
+             patch.object(fetchers, 'HOME_ASSISTANT_SCHOOL_DAY_ENTITY', 'binary_sensor.school_day'), \
+             patch.object(fetchers, 'HOME_ASSISTANT_WORKDAY_ENTITY', 'binary_sensor.workday_sensor'), \
+             patch.object(fetchers, '_ha_state', side_effect=lambda e: {'state': states[e]}):
+            self.assertEqual(fetchers.get_day_type_sensors(), ('on', 'off'))
+
+
+class TestOnemapGeocodeMemo(FetcherTestCase):
+    def setUp(self):
+        super().setUp()
+        p = patch.dict(fetchers._onemap_geocode_memo, clear=True)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_success_is_memoized(self):
+        payload = {"results": [{"LATITUDE": "1.35", "LONGITUDE": "103.8"}]}
+        with patch.object(fetchers.http_session, 'get', return_value=fake_response(payload)) as get:
+            self.assertEqual(fetchers._onemap_geocode('School'), (1.35, 103.8))
+            self.assertEqual(fetchers._onemap_geocode('School'), (1.35, 103.8))
+        self.assertEqual(get.call_count, 1)
+
+    def test_not_found_is_retried(self):
+        with patch.object(fetchers.http_session, 'get', return_value=fake_response({"results": []})) as get:
+            self.assertIsNone(fetchers._onemap_geocode('Nowhere'))
+            self.assertIsNone(fetchers._onemap_geocode('Nowhere'))
+        self.assertEqual(get.call_count, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

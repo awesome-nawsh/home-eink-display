@@ -14,7 +14,13 @@ import signal
 from datetime import datetime
 
 import config
-from config import *
+from config import (
+    BUS_NUMBER_FONT_SIZE, BUS_SERVICES_TO_TRACK, BUS_STOP_CODE_A, DAY_TYPE_FALLBACK,
+    DEBUG_SKIP_TIME_CHECK, HOME_ASSISTANT_DASHBOARD_URL, JOURNEY_DESTINATION,
+    ROUTING_API_PROVIDER, SCHEDULE_CONFIG_PATH, SHOW_JOURNEY_TIME, SLEEP_HOUR,
+    SLEEP_INTERVAL, STATUS_FILE_PATH, WAKE_HOUR, WAKE_INTERVAL,
+    config_reload_requested, refresh_requested, validate_configuration,
+)
 from health import system_health, sd_notify
 from fetchers import cache, fetch_data_parallel, http_session, get_day_type_sensors, get_weather
 from mqtt_client import MQTTClient
@@ -30,15 +36,23 @@ from day_type import day_type_cache, resolve_todays_day_type
 from reload_watch import get_mtime, has_changed
 
 from waveshare_epd import epd7in5b_V2
-import pigpio  # GPIO backend used transitively by the waveshare driver; imported
+import pigpio  # noqa: F401 — GPIO backend used transitively by the waveshare driver; imported
                 # here (as in the pre-split main.py) so a missing/broken pigpio
                 # install fails fast at startup rather than deep inside epd.init().
 
 # ============================================================================
 # CLEANUP AND SIGNAL HANDLING
 # ============================================================================
+_cleaned_up = False
+
+
 def cleanup():
-    """Cleanup function to run on exit."""
+    """Cleanup function to run on exit. Reached up to three ways on one
+    shutdown (signal handler, main()'s finally, atexit) — runs once."""
+    global _cleaned_up
+    if _cleaned_up:
+        return
+    _cleaned_up = True
     try:
         logging.info("Starting cleanup...")
 
@@ -115,7 +129,7 @@ def main():
 
         # Log journey configuration
         if SHOW_JOURNEY_TIME:
-            logging.info(f"Journey Time Tracking ENABLED")
+            logging.info("Journey Time Tracking ENABLED")
             logging.info(f"  Routing API: {ROUTING_API_PROVIDER.upper()}")
             logging.info(f"  Origin: Bus stop {BUS_STOP_CODE_A}")
             logging.info(f"  Destination: {JOURNEY_DESTINATION}")
@@ -128,8 +142,8 @@ def main():
         schedule_mtime = get_mtime(SCHEDULE_CONFIG_PATH)
         env_mtime = get_mtime(config.ENV_FILE_PATH)
 
-        if FORCE_SCREEN:
-            logging.warning(f"FORCE_SCREEN={FORCE_SCREEN} active - schedule/day-type resolution bypassed for testing")
+        if config.FORCE_SCREEN:
+            logging.warning(f"FORCE_SCREEN={config.FORCE_SCREEN} active - schedule/day-type resolution bypassed for testing")
 
         mqtt_client = MQTTClient()
 
@@ -307,8 +321,7 @@ def main():
         return 1
 
     finally:
-        if mqtt_client:
-            mqtt_client.disconnect()
+        cleanup()
         epd7in5b_V2.epdconfig.module_exit(cleanup=True)
         logging.info("Application terminated")
 
