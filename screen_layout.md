@@ -29,8 +29,6 @@ Pixel-level reference for everything drawn onto the e-ink panel by `app/main.py`
   BUS_NUMBER_FONT_SIZE = 32
   LOAD_FONT_SIZE = 16
   BOTTOM_FONT_SIZE = 14
-  BOTTOM_MARGIN = 35
-  TOP_MARGIN = 20
   DIVIDER_WIDTH = 2
   WEATHER_SECTION_HEIGHT = 140
 
@@ -38,7 +36,6 @@ Pixel-level reference for everything drawn onto the e-ink panel by `app/main.py`
   FONT_SMALL = 12
   FONT_MEDIUM = 16
   FONT_LARGE = 24
-  FONT_XLARGE = 32
   FONT_TIMESTAMP = 18   # timestamp, journey-time line, boot "Booted:" text
   FONT_SECTION = 20     # weather header (bold) / train body font size
   FONT_HEADER = 28      # bold section title: bus/train headers, DEBUG MODE

@@ -82,7 +82,7 @@ def build_scenario(args):
             'content': 'Free bridging buses available at affected stations.',
         }
     else:
-        train_info = "No Disruptions Today!"
+        train_info = {'disruptions': [], 'content': ''}
 
     weather_info = None if args.no_weather else {
         'temperature': 29,

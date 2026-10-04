@@ -127,7 +127,13 @@ class TestAuthBugRegression(unittest.TestCase):
             login(client)
             real_cookie = client.get_cookie('session')
             self.assertIsNotNone(real_cookie)
-            tampered_value = real_cookie.value[:-1] + ('a' if real_cookie.value[-1] != 'a' else 'b')
+            # Flip a character in the middle of the signature (the last
+            # '.'-separated segment). Not the final character: base64's last
+            # char of a 20-byte signature carries 2 ignored bits, so e.g.
+            # 'a' -> 'b' there can leave the signature valid (~3% flake).
+            value = real_cookie.value
+            i = value.rindex('.') + 5
+            tampered_value = value[:i] + ('A' if value[i] != 'A' else 'B') + value[i + 1:]
             client.set_cookie('session', tampered_value)
             resp = client.get('/')
             self.assertNotIn(b'Save Configuration', resp.data)

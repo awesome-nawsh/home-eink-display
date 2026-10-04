@@ -390,7 +390,8 @@ def api_preview_image():
     to run the CLI tool or waiting for its scheduled window on the Pi."""
     from io import BytesIO
     from types import SimpleNamespace
-    sys.path.insert(0, TOOLS_DIR)
+    if TOOLS_DIR not in sys.path:
+        sys.path.insert(0, TOOLS_DIR)
     import preview_render
 
     screen = request.args.get('screen', 'combined')

@@ -30,15 +30,23 @@ from day_type import day_type_cache, resolve_todays_day_type
 from reload_watch import get_mtime, has_changed
 
 from waveshare_epd import epd7in5b_V2
-import pigpio  # GPIO backend used transitively by the waveshare driver; imported
+import pigpio  # noqa: F401 — GPIO backend used transitively by the waveshare driver; imported
                 # here (as in the pre-split main.py) so a missing/broken pigpio
                 # install fails fast at startup rather than deep inside epd.init().
 
 # ============================================================================
 # CLEANUP AND SIGNAL HANDLING
 # ============================================================================
+_cleaned_up = False
+
+
 def cleanup():
-    """Cleanup function to run on exit."""
+    """Cleanup function to run on exit. Reached up to three ways on one
+    shutdown (signal handler, main()'s finally, atexit) — runs once."""
+    global _cleaned_up
+    if _cleaned_up:
+        return
+    _cleaned_up = True
     try:
         logging.info("Starting cleanup...")
 
@@ -115,7 +123,7 @@ def main():
 
         # Log journey configuration
         if SHOW_JOURNEY_TIME:
-            logging.info(f"Journey Time Tracking ENABLED")
+            logging.info("Journey Time Tracking ENABLED")
             logging.info(f"  Routing API: {ROUTING_API_PROVIDER.upper()}")
             logging.info(f"  Origin: Bus stop {BUS_STOP_CODE_A}")
             logging.info(f"  Destination: {JOURNEY_DESTINATION}")
@@ -307,8 +315,7 @@ def main():
         return 1
 
     finally:
-        if mqtt_client:
-            mqtt_client.disconnect()
+        cleanup()
         epd7in5b_V2.epdconfig.module_exit(cleanup=True)
         logging.info("Application terminated")
 
