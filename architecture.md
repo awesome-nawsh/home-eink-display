@@ -65,6 +65,7 @@ Technical breakdown of how the system is put together. Companion to [specificati
 | `app/web_config_schema.py` | `CONFIG_SCHEMA` — pure data, drives the `.env`-editing form. |
 | `app/web_config_env.py` | Pure `.env` read/build-updates/atomic-write logic — no Flask, testable with plain dicts. |
 | `app/web_config_schedule_forms.py` | Pure form-data ↔ schedule dict conversion + atomic JSON writer; delegates all validation to `scheduler.py`. |
+| `app/defaults.py` | Pure default values (`.env`/schedule/status/secrets-key paths, legacy wake/sleep hours, MQTT broker/port/topics) shared by `config.py` and `web_config.py`, so the two processes can't drift apart. No side effects, unlike importing `config.py`. |
 | `app/secrets_vault.py` | Fernet encrypt/decrypt for password-type `.env` values, `enc:`-prefixed storage, key-file management (`app/.encryption_key`, gitignored). |
 | `app/templates/`, `app/static/` | Jinja templates and CSS/JS for the web config panel, replacing the old inline `HTML_TEMPLATE` string. |
 | `lib/waveshare_epd/` | Vendored Waveshare display drivers; only `epd7in5b_V2.py` + `epdconfig.py` are live. |

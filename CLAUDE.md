@@ -34,6 +34,7 @@ home-eink-display/
 │   ├── boot_checks.py                # Boot-time connectivity probes
 │   ├── reload_watch.py                # Pure file-mtime-change detection (dynamic reload backstop)
 │   ├── secrets_vault.py                # Encrypt/decrypt password-type .env values at rest
+│   ├── defaults.py                      # Default paths/MQTT values shared by config.py and web_config.py
 │   ├── render/                          # All screen-drawing code (one file per screen + shared helpers)
 │   │   ├── common.py                     # DisplayManager, MDI icon table, font loaders
 │   │   ├── bus_train.py                   # bus_train_screen
