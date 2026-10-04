@@ -14,7 +14,13 @@ import signal
 from datetime import datetime
 
 import config
-from config import *
+from config import (
+    BUS_NUMBER_FONT_SIZE, BUS_SERVICES_TO_TRACK, BUS_STOP_CODE_A, DAY_TYPE_FALLBACK,
+    DEBUG_SKIP_TIME_CHECK, HOME_ASSISTANT_DASHBOARD_URL, JOURNEY_DESTINATION,
+    ROUTING_API_PROVIDER, SCHEDULE_CONFIG_PATH, SHOW_JOURNEY_TIME, SLEEP_HOUR,
+    SLEEP_INTERVAL, STATUS_FILE_PATH, WAKE_HOUR, WAKE_INTERVAL,
+    config_reload_requested, refresh_requested, validate_configuration,
+)
 from health import system_health, sd_notify
 from fetchers import cache, fetch_data_parallel, http_session, get_day_type_sensors, get_weather
 from mqtt_client import MQTTClient
@@ -136,8 +142,8 @@ def main():
         schedule_mtime = get_mtime(SCHEDULE_CONFIG_PATH)
         env_mtime = get_mtime(config.ENV_FILE_PATH)
 
-        if FORCE_SCREEN:
-            logging.warning(f"FORCE_SCREEN={FORCE_SCREEN} active - schedule/day-type resolution bypassed for testing")
+        if config.FORCE_SCREEN:
+            logging.warning(f"FORCE_SCREEN={config.FORCE_SCREEN} active - schedule/day-type resolution bypassed for testing")
 
         mqtt_client = MQTTClient()
 

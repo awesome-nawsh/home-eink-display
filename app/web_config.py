@@ -34,11 +34,12 @@ from secrets_vault import get_or_create_key, encrypt_value, decrypt_value
 from web_config_schema import CONFIG_SCHEMA, COLLAPSED_CATEGORIES
 from web_config_env import read_env_file, build_env_updates, atomic_write_env_file, KNOWN_BAD_SECRET_KEYS
 from web_config_schedule_forms import schedule_from_form, atomic_write_json
+import defaults
 
 from dotenv import load_dotenv
 
-APP_DIR = os.path.dirname(os.path.realpath(__file__))
-ENV_FILE = os.path.join(APP_DIR, '.env')
+APP_DIR = defaults.APP_DIR
+ENV_FILE = defaults.ENV_FILE_PATH
 load_dotenv(ENV_FILE)
 
 # tools/preview_render.py has no hardware imports (same as app/render/*.py
@@ -75,15 +76,13 @@ WEB_CONFIG_USERNAME = os.getenv('WEB_CONFIG_USERNAME', 'admin')
 WEB_CONFIG_SECRET_KEY = os.getenv('WEB_CONFIG_SECRET_KEY', '')
 WEB_CONFIG_PASSWORD_HASH = os.getenv('WEB_CONFIG_PASSWORD_HASH', '')
 
-SCHEDULE_CONFIG_PATH = os.getenv(
-    'SCHEDULE_CONFIG_PATH', os.path.join(APP_DIR, 'schedule_config.json')
-)
-WAKE_HOUR = int(os.getenv('WAKE_HOUR', '7'))
-SLEEP_HOUR = int(os.getenv('SLEEP_HOUR', '22'))
+SCHEDULE_CONFIG_PATH = os.getenv('SCHEDULE_CONFIG_PATH', defaults.SCHEDULE_CONFIG_PATH)
+WAKE_HOUR = int(os.getenv('WAKE_HOUR', defaults.WAKE_HOUR))
+SLEEP_HOUR = int(os.getenv('SLEEP_HOUR', defaults.SLEEP_HOUR))
 
-SECRETS_KEY_PATH = os.getenv('SECRETS_KEY_PATH', os.path.join(APP_DIR, '.encryption_key'))
-# Must match config.py's default — where main.py drops its health snapshot
-STATUS_FILE_PATH = os.getenv('STATUS_FILE_PATH', '/tmp/bus_display_status.json')
+SECRETS_KEY_PATH = os.getenv('SECRETS_KEY_PATH', defaults.SECRETS_KEY_PATH)
+# Where main.py drops its health snapshot
+STATUS_FILE_PATH = os.getenv('STATUS_FILE_PATH', defaults.STATUS_FILE_PATH)
 
 app.secret_key = WEB_CONFIG_SECRET_KEY
 app.permanent_session_lifetime = timedelta(hours=8)
@@ -236,8 +235,8 @@ def _mqtt_publish(topic_var, default_topic, payload):
     env = read_env_file(ENV_FILE)
     mqtt_publish.single(
         env.get(topic_var) or default_topic, payload,
-        hostname=env.get('MQTT_BROKER') or 'localhost',
-        port=int(env.get('MQTT_PORT') or '1883'),
+        hostname=env.get('MQTT_BROKER') or defaults.MQTT_BROKER,
+        port=int(env.get('MQTT_PORT') or defaults.MQTT_PORT),
         auth=_mqtt_auth(env),
     )
 
@@ -248,7 +247,7 @@ def publish_config_reload():
     than waiting for its mtime-poll backstop. Never raises — a failed
     publish just means that backstop picks the change up a bit later instead."""
     try:
-        _mqtt_publish('MQTT_TOPIC_CONFIG_RELOAD', 'eink/display/config_reload', 'reload')
+        _mqtt_publish('MQTT_TOPIC_CONFIG_RELOAD', defaults.MQTT_TOPIC_CONFIG_RELOAD, 'reload')
     except Exception as e:
         logging.warning(f"Could not publish config_reload via MQTT: {e}")
 
@@ -336,7 +335,7 @@ def save_schedule():
 def api_refresh():
     """Trigger an immediate data refresh via MQTT (no service restart)."""
     try:
-        _mqtt_publish('MQTT_TOPIC_REFRESH', 'eink/display/refresh', 'refresh')
+        _mqtt_publish('MQTT_TOPIC_REFRESH', defaults.MQTT_TOPIC_REFRESH, 'refresh')
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
