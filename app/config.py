@@ -117,6 +117,9 @@ JOURNEY_ICON_X = 25       # x for journey-related MDI icons (map-marker, timer)
 JOURNEY_HEADER_GAP = 35   # vertical space reserved for the optional journey destination header
 LOAD_TEXT_Y_NUDGE = 8     # vertical centering correction for the load text/bar
 JOURNEY_Y_GAP = 8         # gap below a bus box before its journey-time line
+JOURNEY_LINE_HEIGHT = 22  # height of that journey-time line (18px icon/text + padding)
+BUS_MORE_LINE_HEIGHT = 20 # "+N more" overflow line under the last bus row that fits
+BUS_SECTION_BOTTOM = SCREEN_HEIGHT - 4  # lowest y the bus column may draw to
 
 # Train section layout
 TRAIN_SECTION_Y_OFFSET = 70      # y_offset start for train content, below HEADER_DIVIDER_Y
@@ -145,16 +148,19 @@ HTTP_TIMEOUT_LONG = 15
 
 # Environment variables with defaults
 API_KEY = decrypt_value(os.getenv('API_KEY'), _secrets_key)
-BUS_API_URL = os.getenv('API_BUS_URL', 'Not Found - bus API url')
-TRAIN_API_URL = os.getenv('API_TRAIN_URL', 'Not Found - train API url')
-API_BUS_STOP_INFO_URL = os.getenv('API_BUS_STOP_INFO_URL', 'Not Found - bus stop API url')
+# LTA DataMall endpoints — the same defaults as .env.example and the web
+# panel. The fetchers add BusStopCode as a query param themselves; a legacy
+# value ending in `?BusStopCode=` still works (fetchers._lta_base_url).
+BUS_API_URL = os.getenv('API_BUS_URL') or 'https://datamall2.mytransport.sg/ltaodataservice/v3/BusArrival'
+TRAIN_API_URL = os.getenv('API_TRAIN_URL') or 'https://datamall2.mytransport.sg/ltaodataservice/TrainServiceAlerts'
+API_BUS_STOP_INFO_URL = os.getenv('API_BUS_STOP_INFO_URL') or 'https://datamall2.mytransport.sg/ltaodataservice/BusStops'
 HEADER_A = os.getenv('A_HEADER', 'Bus Stop')
 BUS_STOP_CODE_A = os.getenv('BUS_STOP_CODE_A')
 
 # Journey Time Configuration - Simplified with API
 SHOW_JOURNEY_TIME = os.getenv('SHOW_JOURNEY_TIME', 'false').lower() == 'true'
 BUS_SERVICES_TO_TRACK = [s.strip() for s in os.getenv('BUS_SERVICES_TO_TRACK', '').split(',') if s.strip()]
-JOURNEY_DESTINATION = os.getenv('JOURNEY_DESTINATION', 'Destination')  # e.g., "School Name, Singapore" or "123 Main St"
+JOURNEY_DESTINATION = os.getenv('JOURNEY_DESTINATION', '')  # e.g., "School Name, Singapore" or "123 Main St"
 JOURNEY_DESTINATION_SHORT = os.getenv('JOURNEY_DESTINATION_SHORT')  # Short name for display (optional)
 
 # Routing API Configuration
@@ -332,12 +338,6 @@ def validate_configuration():
         errors.append("API_KEY is required for bus/train APIs")
     if not BUS_STOP_CODE_A:
         errors.append("BUS_STOP_CODE_A is required")
-    if not BUS_API_URL or BUS_API_URL == 'Not Found - bus API url':
-        errors.append("API_BUS_URL is not configured")
-    if not TRAIN_API_URL or TRAIN_API_URL == 'Not Found - train API url':
-        errors.append("API_TRAIN_URL is not configured")
-    if not API_BUS_STOP_INFO_URL:
-        warnings.append("API_BUS_STOP_INFO_URL not set - using default")
 
     # Journey time configuration
     if SHOW_JOURNEY_TIME:
@@ -349,10 +349,6 @@ def validate_configuration():
             errors.append("Google Maps selected but GOOGLE_MAPS_API_KEY not set")
 
     # Optional but recommended
-    if not HOME_ASSISTANT_API_URL:
-        warnings.append("HOME_ASSISTANT_API_URL not set - weather disabled")
-    if not HOME_ASSISTANT_TOKEN:
-        warnings.append("HOME_ASSISTANT_TOKEN not set - weather disabled")
     if MQTT_ENABLED and not MQTT_BROKER:
         warnings.append("MQTT enabled but MQTT_BROKER not set")
     if not HOME_ASSISTANT_DASHBOARD_URL:
@@ -364,8 +360,8 @@ def validate_configuration():
         )
     if not HOME_ASSISTANT_API_URL or not HOME_ASSISTANT_TOKEN:
         warnings.append(
-            "HOME_ASSISTANT_API_URL/HOME_ASSISTANT_TOKEN not set - "
-            "day-type resolution will always fall back to DAY_TYPE_FALLBACK"
+            "HOME_ASSISTANT_API_URL/HOME_ASSISTANT_TOKEN not set - weather falls back to "
+            "Open-Meteo, and day-type resolution always uses DAY_TYPE_FALLBACK"
         )
 
     # Log results

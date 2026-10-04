@@ -250,27 +250,55 @@ class TestMqttAuth(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             key_path = os.path.join(td, 'key')
             encrypted = encrypt_value('broker-pw', get_or_create_key(key_path))
-            with patch.dict(os.environ, {'MQTT_USERNAME': 'u', 'MQTT_PASSWORD': encrypted}), \
-                 patch.object(web_config, 'SECRETS_KEY_PATH', key_path):
-                self.assertEqual(web_config._mqtt_auth(),
+            with patch.object(web_config, 'SECRETS_KEY_PATH', key_path):
+                self.assertEqual(web_config._mqtt_auth({'MQTT_USERNAME': 'u', 'MQTT_PASSWORD': encrypted}),
                                  {'username': 'u', 'password': 'broker-pw'})
 
     def test_plaintext_password_passes_through(self):
         import tempfile
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as td:
-            with patch.dict(os.environ, {'MQTT_USERNAME': 'u', 'MQTT_PASSWORD': 'plain-pw'}), \
-                 patch.object(web_config, 'SECRETS_KEY_PATH', os.path.join(td, 'key')):
-                self.assertEqual(web_config._mqtt_auth(),
+            with patch.object(web_config, 'SECRETS_KEY_PATH', os.path.join(td, 'key')):
+                self.assertEqual(web_config._mqtt_auth({'MQTT_USERNAME': 'u', 'MQTT_PASSWORD': 'plain-pw'}),
                                  {'username': 'u', 'password': 'plain-pw'})
 
     def test_no_credentials_returns_none(self):
-        from unittest.mock import patch
-        env = {k: v for k, v in os.environ.items()
-               if k not in ('MQTT_USERNAME', 'MQTT_PASSWORD')}
-        with patch.dict(os.environ, env, clear=True):
-            self.assertIsNone(web_config._mqtt_auth())
+        self.assertIsNone(web_config._mqtt_auth({}))
+        self.assertIsNone(web_config._mqtt_auth({'MQTT_USERNAME': 'u', 'MQTT_PASSWORD': ''}))
 
+
+class TestMqttPublishReadsCurrentEnv(unittest.TestCase):
+    """Regression: MQTT settings saved through the UI must apply to the next
+    publish without restarting web_config — they used to come from
+    os.environ, loaded once at process start."""
+
+    def test_publish_uses_settings_written_after_startup(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as td:
+            env_path = os.path.join(td, '.env')
+            with open(env_path, 'w') as f:
+                f.write('MQTT_BROKER=new-broker.local\nMQTT_PORT=1884\n'
+                        'MQTT_TOPIC_REFRESH=custom/refresh\n'
+                        'MQTT_USERNAME=u\nMQTT_PASSWORD=pw\n')
+            with patch.object(web_config, 'ENV_FILE', env_path), \
+                 patch.object(web_config, 'SECRETS_KEY_PATH', os.path.join(td, 'key')), \
+                 patch.dict(os.environ, {'MQTT_BROKER': 'old-broker.local'}), \
+                 patch.object(web_config.mqtt_publish, 'single') as single:
+                web_config._mqtt_publish('MQTT_TOPIC_REFRESH', 'eink/display/refresh', 'refresh')
+            single.assert_called_once_with(
+                'custom/refresh', 'refresh', hostname='new-broker.local', port=1884,
+                auth={'username': 'u', 'password': 'pw'})
+
+    def test_defaults_when_unset(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as td:
+            with patch.object(web_config, 'ENV_FILE', os.path.join(td, 'missing.env')), \
+                 patch.object(web_config.mqtt_publish, 'single') as single:
+                web_config._mqtt_publish('MQTT_TOPIC_CONFIG_RELOAD', 'eink/display/config_reload', 'reload')
+            single.assert_called_once_with(
+                'eink/display/config_reload', 'reload', hostname='localhost', port=1883, auth=None)
 
 if __name__ == "__main__":
     unittest.main()

@@ -54,7 +54,7 @@ def check_lta_api():
     """LTA DataMall host reachability via HEAD — proves the host answers,
     without spending an AccountKey-authenticated call on a full bus-arrival
     fetch."""
-    if not BUS_API_URL or BUS_API_URL.startswith('Not Found'):
+    if not BUS_API_URL:
         return False
     try:
         r = requests.head(BUS_API_URL, timeout=BOOT_CHECK_TIMEOUT)

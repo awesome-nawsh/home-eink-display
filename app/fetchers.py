@@ -3,7 +3,6 @@ Open-Meteo fallback), journey-time routing (OneMap/Google), plus the shared
 HTTP session, response cache, and per-endpoint backoff manager they're all
 built on.
 """
-import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -33,6 +32,20 @@ def create_session():
     return session
 
 http_session = create_session()
+
+# A malformed-but-200 response (missing field, wrong JSON shape, unparseable
+# timestamp) is treated exactly like a network failure — backoff plus stale
+# data — rather than raising out of the fetch thread and taking main() (and
+# the whole display process) down with it.
+_PARSE_ERRORS = (KeyError, IndexError, TypeError, ValueError, AttributeError)
+
+
+def _lta_base_url(url):
+    """The LTA endpoint without any query string. Older .env files carry
+    the stop code parameter in the URL itself (`...BusArrival?BusStopCode=`);
+    the fetchers now pass it via `params=`, so strip it here and both forms
+    keep working."""
+    return url.split('?', 1)[0]
 
 # ============================================================================
 # API FUNCTIONS WITH CACHING
@@ -128,7 +141,7 @@ class BackoffManager:
 
         count, last_time = self.failures[key]
         wait_time = min(60 * (2 ** count), 900)
-        elapsed = (datetime.now() - last_time).seconds
+        elapsed = int((datetime.now() - last_time).total_seconds())
 
         if elapsed > wait_time:
             logging.debug(f"Backoff expired for {key}, retrying (waited {elapsed}s)")
@@ -171,14 +184,14 @@ def get_bus_arrival(bus_stop_code, force_refresh=False):
 
     logging.debug(f"Fetching bus info for stop {bus_stop_code}")
 
-    url = BUS_API_URL + bus_stop_code
     headers = {
         'AccountKey': API_KEY,
         'accept': 'application/json'
     }
 
     try:
-        response = http_session.get(url, headers=headers, timeout=HTTP_TIMEOUT_DEFAULT)
+        response = http_session.get(_lta_base_url(BUS_API_URL), params={'BusStopCode': bus_stop_code},
+                                    headers=headers, timeout=HTTP_TIMEOUT_DEFAULT)
         response.raise_for_status()
         data = response.json()
 
@@ -207,26 +220,35 @@ def get_bus_arrival(bus_stop_code, force_refresh=False):
         system_health.record_api_call('bus', success=True)
         return bus_info
 
-    except requests.RequestException as e:
-        logging.error(f"Error fetching bus data for {bus_stop_code}: {e}")
+    except (requests.RequestException, *_PARSE_ERRORS) as e:
+        logging.error(f"Error fetching bus data for {bus_stop_code}: {e!r}")
         backoff_manager.record_failure(cache_key)
         system_health.record_api_call('bus', success=False)
         return _stale_or_unavailable(cache_key, 'bus')
 
-# Success-only memo (not lru_cache): coordinates never change for a given
-# stop code, so a successful lookup is cached for the life of the process —
-# but a failed lookup (transient network blip) must NOT be memoized, or
-# journey times would stay dead until a service restart.
+# Coordinates never change for a given stop code, so a definitive answer is
+# memoized for the life of the process — a found stop, or a full scan that
+# didn't find it (re-scanning ~11 pages every tick would be pointless). A
+# failed request (transient network blip) is NOT memoized, or journey times
+# would stay dead until a service restart.
 _bus_stop_coordinates_memo = {}
+
+# LTA DataMall pages BusStops 500 records at a time (~5,200 stops in all);
+# the cap just bounds the scan if the API ever misbehaves.
+_BUS_STOPS_PAGE_SIZE = 500
+_BUS_STOPS_MAX_PAGES = 20
 
 
 def get_bus_stop_coordinates(bus_stop_code):
-    """Get coordinates for a bus stop code from LTA DataMall."""
+    """Get coordinates for a bus stop code from LTA DataMall.
+
+    BusStopCode is sent as a filter, but each returned record's own code is
+    checked rather than trusting `value[0]` — if the filter is ignored the
+    first record is just the first stop in LTA's dataset, which would put
+    journey times and the Open-Meteo weather in the wrong place. Pages on
+    with $skip until the stop is found."""
     if bus_stop_code in _bus_stop_coordinates_memo:
         return _bus_stop_coordinates_memo[bus_stop_code]
-
-    # Use the configurable URL
-    url = API_BUS_STOP_INFO_URL + bus_stop_code
 
     headers = {
         'AccountKey': API_KEY,
@@ -234,25 +256,32 @@ def get_bus_stop_coordinates(bus_stop_code):
     }
 
     try:
-        response = http_session.get(url, headers=headers, timeout=HTTP_TIMEOUT_LONG)
-        response.raise_for_status()
-        data = response.json()
+        for page in range(_BUS_STOPS_MAX_PAGES):
+            params = {'BusStopCode': bus_stop_code}
+            if page:
+                params['$skip'] = page * _BUS_STOPS_PAGE_SIZE
+            response = http_session.get(_lta_base_url(API_BUS_STOP_INFO_URL), params=params,
+                                        headers=headers, timeout=HTTP_TIMEOUT_LONG)
+            response.raise_for_status()
+            stops = response.json().get('value') or []
 
-        # The API returns filtered results when using BusStopCode parameter
-        if data.get('value'):
-            stop = data['value'][0]  # Should only return one result
-            lat = stop['Latitude']
-            lon = stop['Longitude']
-            logging.info(f"Bus stop {bus_stop_code} coordinates: {lat}, {lon}")
-            _bus_stop_coordinates_memo[bus_stop_code] = (lat, lon)
-            return lat, lon
+            for stop in stops:
+                if str(stop.get('BusStopCode')) == bus_stop_code:
+                    lat, lon = stop['Latitude'], stop['Longitude']
+                    logging.info(f"Bus stop {bus_stop_code} coordinates: {lat}, {lon}")
+                    _bus_stop_coordinates_memo[bus_stop_code] = (lat, lon)
+                    return lat, lon
 
-        logging.warning(f"Bus stop {bus_stop_code} not found in LTA database")
+            if len(stops) < _BUS_STOPS_PAGE_SIZE:
+                break
+
+    except (requests.RequestException, *_PARSE_ERRORS) as e:
+        logging.error(f"Error fetching bus stop coordinates: {e!r}")
         return None
 
-    except requests.RequestException as e:
-        logging.error(f"Error fetching bus stop coordinates: {e}")
-        return None
+    logging.warning(f"Bus stop {bus_stop_code} not found in LTA database")
+    _bus_stop_coordinates_memo[bus_stop_code] = None
+    return None
 
 def calculate_journey_time_onemap(origin_lat, origin_lon, destination, departure_time):
     """
@@ -538,8 +567,8 @@ def get_train_disruptions(force_refresh=False):
         system_health.record_api_call('train', success=True)
         return result
 
-    except requests.RequestException as e:
-        logging.error(f"Error fetching train disruptions: {e}")
+    except (requests.RequestException, *_PARSE_ERRORS) as e:
+        logging.error(f"Error fetching train disruptions: {e!r}")
         backoff_manager.record_failure(cache_key)
         system_health.record_api_call('train', success=False)
         return _stale_or_unavailable(cache_key, 'train')
@@ -590,8 +619,8 @@ def _fetch_weather_ha():
             'wind_speed': data['attributes'].get('wind_speed'),
             'forecast': data['attributes'].get('forecast', [])
         }
-    except requests.RequestException as e:
-        logging.error(f"Error fetching weather from Home Assistant: {e}")
+    except (requests.RequestException, *_PARSE_ERRORS) as e:
+        logging.error(f"Error fetching weather from Home Assistant: {e!r}")
         return None
 
 
@@ -781,8 +810,8 @@ def get_day_type_sensors():
         workday_state = fetch_state(HOME_ASSISTANT_WORKDAY_ENTITY)
         system_health.record_api_call('day_type', success=True)
         return school_day_state, workday_state
-    except requests.RequestException as e:
-        logging.error(f"Error fetching day-type sensors from Home Assistant: {e}")
+    except (requests.RequestException, *_PARSE_ERRORS) as e:
+        logging.error(f"Error fetching day-type sensors from Home Assistant: {e!r}")
         system_health.record_api_call('day_type', success=False)
         return None, None
 

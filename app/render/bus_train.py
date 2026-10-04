@@ -36,6 +36,30 @@ def draw_timestamp(draw_r, x=None, y=10, manual=False):
 
     draw_r.text((SCREEN_WIDTH - TEXT_RIGHT_MARGIN, y + 22), formatted_date, font=small_font, fill=0, anchor="ra")
 
+def _bus_row_height(service_no, journey_times):
+    """Pixels a bus row actually draws below its y: the number box, plus the
+    journey-time line when that service has one."""
+    height = BUS_BOX_TOP_GAP + BUS_BOX_HEIGHT
+    if journey_times and service_no in journey_times:
+        height += JOURNEY_Y_GAP + JOURNEY_LINE_HEIGHT
+    return height
+
+
+def fit_bus_rows(bus_info, y_start, journey_times=None, bottom=BUS_SECTION_BOTTOM):
+    """Pure. How many bus rows fit between y_start and `bottom`. Every row
+    except the last must also leave room for the "+N more" line, since if
+    the next row doesn't fit that line goes directly beneath this one."""
+    y = y_start
+    for idx, (service_no, _, _) in enumerate(bus_info):
+        needed = _bus_row_height(service_no, journey_times)
+        if idx < len(bus_info) - 1:
+            needed += BUS_MORE_LINE_HEIGHT
+        if y + needed > bottom:
+            return idx
+        y += BUS_BOX_Y_SPACING
+    return len(bus_info)
+
+
 def draw_bus_section(draw, draw_r, bus_info, font, y_start, load_font, journey_times=None):
     """Draw the bus arrival section with journey times and destination header.
 
@@ -67,7 +91,12 @@ def draw_bus_section(draw, draw_r, bus_info, font, y_start, load_font, journey_t
         draw.line((BUS_SECTION_X, header_y + 26, COLUMN_OFFSET, header_y + 26), fill=0, width=1)
         y += JOURNEY_HEADER_GAP
 
-    for service_no, arrival_times, load_rates in bus_info:
+    rows_shown = fit_bus_rows(bus_info, y, journey_times)
+    rows_bottom = y
+
+    for service_no, arrival_times, load_rates in bus_info[:rows_shown]:
+        rows_bottom = y + _bus_row_height(service_no, journey_times)
+
         # Draw bus number box
         box_top = y + BUS_BOX_TOP_GAP
         box_height = BUS_BOX_HEIGHT
@@ -135,6 +164,15 @@ def draw_bus_section(draw, draw_r, bus_info, font, y_start, load_font, journey_t
             draw.text((48, journey_y + 2), journey_text, font=journey_font, fill=0)
 
         y += BUS_BOX_Y_SPACING
+
+    # More services than fit: say so rather than drawing rows off the panel
+    hidden = [service_no for service_no, _, _ in bus_info[rows_shown:]]
+    if hidden:
+        more_text = f"+{len(hidden)} more: {', '.join(hidden)}"
+        if len(more_text) > 40:
+            more_text = more_text[:37] + "..."
+        draw.text((BUS_SECTION_X, rows_bottom + 2), more_text, font=get_font(FONT_MEDIUM), fill=0)
+        logging.debug(f"Bus section full - {len(hidden)} service(s) not shown: {hidden}")
 
     return y
 

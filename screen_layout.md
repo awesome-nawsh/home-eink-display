@@ -144,7 +144,7 @@ Load bar fill height driven by `BUS_LOAD_MAP_SIZE` (`main.py:52`): `SEA` (Seats 
 - Icon `MDI.TIMER` at `(JOURNEY_ICON_X, journey_y)` where `journey_y = box_top + box_height + JOURNEY_Y_GAP`, size 18, **red**.
 - Text `"{total}min (arrive ~{arrival})"` at `(48, journey_y+2)`, Regular `FONT_TIMESTAMP` (18), **black**.
 
-Default row count shown: **3 bus boxes** (`bus_box_1/2/3` at y=80/185/290) — actual count depends on however many distinct `Services[]` LTA returns for the configured bus stop; more services simply extend the loop further down the column (no hard cap in the draw code, but screen real estate runs out around 4 rows).
+Default row count shown: **3 bus boxes** (`bus_box_1/2/3` at y=80/185/290) — actual count depends on however many distinct `Services[]` LTA returns for the configured bus stop. `fit_bus_rows()` caps it at whatever fits above `BUS_SECTION_BOTTOM` (y=476): 4 rows without journey lines, 3 with them. Any remaining services are listed on a `+N more: 151, 154` line (`FONT_MEDIUM`, black) 2px below the last row shown, which needs `BUS_MORE_LINE_HEIGHT=20`px; every row except the last must leave room for that line.
 
 ### 3.3 Footer
 
