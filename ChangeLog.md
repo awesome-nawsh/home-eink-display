@@ -1,5 +1,19 @@
 # Changelog - Bus Arrival Display
 
+## [V15.4] - Code cleanup: shared helpers, explicit config imports, shared defaults
+
+No change to what the display shows — all screens render pixel-identically before and after.
+
+- **Shared request helpers** in `fetchers.py` (`_lta_headers()`, `_ha_headers()`, `_ha_state()`) replace several copy-pasted header blocks and two nested `fetch_state()` functions.
+- **Train status shape**: the train fetcher always returns `{'disruptions': [...], 'content': '...'}`; an empty result is the "all clear", replacing the `"No Disruptions Today!"` magic string the renderer compared against.
+- **OneMap destination geocode memoized** after the first success, instead of looked up on every journey calculation.
+- **Shutdown cleanup runs once** (it was reached up to three times: signal handler, `finally`, `atexit`).
+- **Explicit config imports**: `main.py`, `fetchers.py`, `render/bus_train.py` and `render/debug_screen.py` now import named values instead of `from config import *`, so pyflakes can check them; the live-reloadable `FORCE_SCREEN` is only ever read as `config.FORCE_SCREEN`.
+- **New `app/defaults.py`**: default paths, legacy wake/sleep hours and MQTT broker/port/topics shared by `config.py` and `web_config.py`, replacing `web_config`'s duplicated copies.
+- Leftovers removed: dead locals, unused `TOP_MARGIN`/`BOTTOM_MARGIN`/`FONT_XLARGE`, placeholder-less f-strings, `sys.path` growth on every `/api/preview_image` request.
+- Fixed a ~3% flake in `test_tampered_session_cookie_denied` (it flipped the cookie's final base64 character, whose low bits are ignored).
+- New tests: `test_main_cleanup.py`, `test_defaults.py`, plus expanded `test_fetchers.py` (173 total).
+
 ## [V15.3] - Fetcher robustness, LTA URL handling, bus row overflow
 
 - **Malformed API responses no longer restart the display**: a 200 response with a missing field or unexpected JSON shape (bus, train, HA weather, HA day-type sensors, bus-stop lookup) now takes the same path as a network failure — backoff plus last-known-good data — instead of raising out of the fetch thread and taking the whole `bus_display` process down with it.
