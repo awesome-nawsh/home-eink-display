@@ -1,5 +1,16 @@
 # Changelog - Bus Arrival Display
 
+## [V15.3] - Fetcher robustness, LTA URL handling, bus row overflow
+
+- **Malformed API responses no longer restart the display**: a 200 response with a missing field or unexpected JSON shape (bus, train, HA weather, HA day-type sensors, bus-stop lookup) now takes the same path as a network failure — backoff plus last-known-good data — instead of raising out of the fetch thread and taking the whole `bus_display` process down with it.
+- **Backoff timer fix**: `BackoffManager` used `timedelta.seconds`, which wraps every 24h, so a day-old failure (e.g. across the overnight sleep screen) looked seconds old and stayed in backoff. Now `total_seconds()`.
+- **LTA URL handling**: `BusStopCode` is now sent as a proper query parameter, and any legacy `?BusStopCode=` suffix in `.env` is stripped — so both older deployments and the plain endpoints documented in `.env.example`/the web panel work (the latter previously produced `…/BusArrival83139`). The `'Not Found - …'` placeholder defaults are replaced with the real LTA endpoints.
+- **Bus stop location lookup** checks each returned record's `BusStopCode` instead of trusting the first result, paging with `$skip` if LTA ignores the filter — previously this could put journey times and the Open-Meteo weather on the wrong stop. A definitive "not found" is memoized; network failures are not.
+- `JOURNEY_DESTINATION` no longer defaults to the literal string `"Destination"` (journey times are now off, with a startup warning, when unset). Startup warnings no longer claim weather is disabled without Home Assistant (Open-Meteo is the fallback).
+- **Bus column overflow**: rows are capped at what fits (4 without journey lines, 3 with) and any remaining services are listed on a `+N more: 151, 154` line, instead of being drawn off the bottom of the panel. See `screen_layout.md`.
+- **Web panel MQTT settings** (broker, credentials, topics) are now read from `.env` on each publish, so changes saved in the UI apply to the Refresh button and schedule-reload ping without restarting `web_config`.
+- New tests: `test_fetchers.py`, `test_bus_rows.py`, plus expanded `test_web_config_auth.py` (164 total).
+
 ## [V15.2] - Screen Preview tab in the web panel
 
 - New **Preview** tab (`/preview`) renders any of `combined`/`daytime`/`sleep`/`boot`/`debug` to a PNG directly in the browser — the same hardware-free code path as `tools/preview_render.py` (real `render.*` draw functions against a fake in-memory display, no e-ink hardware or SSH access needed). Scenario toggles mirror the CLI tool's flags: simulate a train disruption, weather unavailable, omit journey time, simulate a manual refresh — greyed out for screens that don't use them. Not offered for `ha_screen`, which fetches a live HA dashboard screenshot rather than drawing anything locally.
