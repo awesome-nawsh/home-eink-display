@@ -1,5 +1,14 @@
 # Changelog - Bus Arrival Display
 
+## [V15.5] - Docs: installing as a different user or into a different folder
+
+Docs only, no code changes.
+
+- `How-to.md` step 2 explains that the app runs from any folder as any user, and lists what assumes the default `pi` user and `/home/pi/home-eink-display`: both systemd unit files, the sudoers example, and the commands in the docs. Each comes with the symptom if it's left wrong.
+- Steps 6 and 7: the unit-file fix-up now uses `$(pwd)` instead of assuming the folder is named `home-eink-display`, is shown for `web_config.service` too, and there's a sudoers install variant for users other than `pi`.
+- Troubleshooting covers `status=217/USER` / `status=200/CHDIR`, and the `/api/restart` permission entry mentions a sudoers user mismatch.
+- `CLAUDE.md` marks the `pi` user/path as documented defaults, not requirements.
+
 ## [V15.4] - Code cleanup: shared helpers, explicit config imports, shared defaults
 
 No change to what the display shows — all screens render pixel-identically before and after.
