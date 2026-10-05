@@ -33,6 +33,17 @@ git clone https://github.com/awesome-nawsh/home-eink-display.git
 cd home-eink-display
 ```
 
+**Installing as a different user, or into a different folder?** That's fine. The app finds `.env`, the schedule, fonts and drivers relative to its own files, so the folder's name and location don't matter to the code. The docs and the files in `systemd/` assume user `pi` and `/home/pi/home-eink-display`, though, so four things need your real user and path instead:
+
+| What | Assumes | If left wrong |
+|---|---|---|
+| `systemd/bus_display.service` | `User=pi`, `/home/pi/home-eink-display` in `ExecStart`/`WorkingDirectory` | Service won't start: `status=217/USER` (user), `200/CHDIR` (path) |
+| `systemd/web_config.service` | Same as above | Same as above |
+| `systemd/bus_display_restart.sudoers.example` | Username `pi` | The web panel's Restart Service button fails with a permission error |
+| Commands in these docs (`cd /home/pi/home-eink-display`, `ssh pi@…`) | User `pi` and that path | Use your own user and path |
+
+Steps 6 and 7 show the one-line fix-ups. Run them from the repo root, as the user the services will run as: they use `$(pwd)` and `$USER`. The repo's copies in `systemd/` stay generic. The copies you install in `/etc/systemd/system/` and `/etc/sudoers.d/` are yours, so if you ever copy the repo versions over them again (e.g. after a `git pull` changes them), re-apply the fix-ups. To see what's currently installed: `systemctl cat bus_display | grep -E "User|ExecStart|WorkingDirectory"`.
+
 **Optional — exclude `tests/` from the Pi's working tree.** It's completely harmless to leave in place (nothing at runtime imports it, no extra dependencies, negligible disk use), but if you'd rather not have it checked out on the device itself:
 
 ```bash
@@ -98,14 +109,14 @@ Edit the four `start`/`end` times to suit your household. See [specifications.md
 
 ## 6. Deploy the main display service
 
-**The unit files in `systemd/` are templates** — they assume user `pi` and the repo at `/home/pi/home-eink-display`. If your username or clone path differ, fix them up as you copy (a service pointing at a nonexistent user fails with `status=217/USER`):
+**The unit files in `systemd/` are templates.** They assume user `pi` and the repo at `/home/pi/home-eink-display`. If your user or folder differ (see step 2), fix them up as you copy:
 
 ```bash
 sudo cp systemd/bus_display.service /etc/systemd/system/
 
-# Only if your user/path differ from the pi defaults — substitute your own:
+# Only if your user/folder differ from the pi defaults. Run from the repo root:
 sudo sed -i -e "s/^User=pi/User=$USER/" \
-  -e "s|/home/pi/home-eink-display|$HOME/home-eink-display|g" \
+  -e "s|/home/pi/home-eink-display|$(pwd)|g" \
   /etc/systemd/system/bus_display.service
 
 sudo systemctl daemon-reload
@@ -129,6 +140,12 @@ Lets you edit `.env` and the schedule from a browser instead of SSHing in every 
 
 ```bash
 sudo cp systemd/web_config.service /etc/systemd/system/
+
+# Only if your user/folder differ from the pi defaults. Run from the repo root:
+sudo sed -i -e "s/^User=pi/User=$USER/" \
+  -e "s|/home/pi/home-eink-display|$(pwd)|g" \
+  /etc/systemd/system/web_config.service
+
 sudo systemctl daemon-reload
 sudo systemctl enable --now web_config
 ```
@@ -141,6 +158,15 @@ To let the panel's "Restart Service" button actually restart `bus_display` (need
 sudo cp systemd/bus_display_restart.sudoers.example /etc/sudoers.d/bus_display_restart
 sudo chmod 440 /etc/sudoers.d/bus_display_restart
 sudo visudo -c   # validates the syntax
+```
+
+If `web_config` runs as a user other than `pi`, install it with your username instead (the file grants the permission to one named user):
+
+```bash
+sed "s/^pi /$USER /" systemd/bus_display_restart.sudoers.example \
+  | sudo tee /etc/sudoers.d/bus_display_restart > /dev/null
+sudo chmod 440 /etc/sudoers.d/bus_display_restart
+sudo visudo -c
 ```
 
 ## 8. Verify it's actually working
@@ -156,6 +182,7 @@ sudo visudo -c   # validates the syntax
 - **Bus/train API calls return 404**: LTA DataMall requires `https://`, not `http://`, for some endpoints — double-check `API_BUS_URL`/`API_TRAIN_URL` in `.env` match the `https://` defaults in `.env.example`.
 - **Port 5000 already in use**: on some systems (notably macOS, if you're testing `web_config.py` on a dev machine rather than the Pi) something else already listens there — set `WEB_CONFIG_PORT` to something else in `.env`.
 - **`web_config.py` refuses to start**: it's telling you exactly what's missing in its startup message — `WEB_CONFIG_SECRET_KEY` and `WEB_CONFIG_PASSWORD_HASH` must both be set to real, non-placeholder values (step 4 above).
-- **`/api/restart` fails with a permission error**: the one-time sudoers setup (step 7) hasn't been done yet on this Pi.
+- **`/api/restart` fails with a permission error**: the one-time sudoers setup (step 7) hasn't been done yet on this Pi, or it names user `pi` while `web_config` runs as someone else (see step 2).
+- **Service won't start, with `status=217/USER` or `status=200/CHDIR`**: the installed unit file still points at user `pi` or `/home/pi/home-eink-display` but your install is elsewhere. Re-apply the step 6/7 fix-ups, then `sudo systemctl daemon-reload` and restart.
 - **Panel shows a wrong/blank layout**: confirm `SCREEN_WIDTH`/`SCREEN_HEIGHT` in `app/config.py` match your actual panel's `EPD_WIDTH`/`EPD_HEIGHT` (`lib/waveshare_epd/epd7in5b_V2.py`) — `DisplayManager` checks this at startup and refuses to run on a mismatch.
 - **Deeper architecture/behavior questions**: see [architecture.md](architecture.md) (how it's structured), [specifications.md](specifications.md) (what it does), [design.md](design.md) (why), [screen_layout.md](screen_layout.md) (exact pixel layout), and `todo.md` (what's planned but not built yet).
