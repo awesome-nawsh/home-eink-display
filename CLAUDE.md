@@ -16,6 +16,8 @@ Setting this up from scratch? See [How-to.md](How-to.md) for the full step-by-st
 - Connected via GPIO HAT (no soldering)
 - Pi path: `/home/pi/home-eink-display/`
 
+These are the **documented defaults**, not requirements. The code works from any folder, as any user. But the `systemd/` unit files, the sudoers example and the commands in these docs assume them, so an install elsewhere needs those adjusting. See `How-to.md` step 2. Wherever these docs say `/home/pi/home-eink-display` or `pi@`, substitute the real path and user.
+
 ---
 
 ## Directory Structure
@@ -112,7 +114,7 @@ git push
 
 # 2. SSH to Pi and pull
 ssh pi@<pi-ip>
-cd /home/pi/home-eink-display
+cd /home/pi/home-eink-display   # or wherever you cloned it
 git pull
 
 # 3. Restart the service(s)
